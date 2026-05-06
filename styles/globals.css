@@ -1,17 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #F5F7FA;
+  --foreground: #1A1A2E;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-html,
-body {
+html, body {
   max-width: 100vw;
   overflow-x: hidden;
 }
@@ -19,7 +17,7 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Noto Sans KR", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -35,8 +33,97 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
+@keyframes ticker {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
+.animate-ticker {
+  animation: ticker 28s linear infinite;
+}
+.animate-ticker:hover {
+  animation-play-state: paused;
+}
+
+/* ── 배지 shine sweep ── */
+@keyframes badge-shine {
+  0%   { transform: translateX(-160%) skewX(-20deg); opacity: 0.6; }
+  60%  { opacity: 0.9; }
+  100% { transform: translateX(260%)  skewX(-20deg); opacity: 0; }
+}
+.badge-shine-anim {
+  animation: badge-shine 2.8s ease-in-out infinite;
+}
+
+/* ── 배지 glow pulse ── */
+@keyframes badge-glow-gold {
+  0%, 100% { box-shadow: 0 0 16px 3px rgba(251,191,36,0.45), 0 0 36px 6px rgba(251,191,36,0.2); }
+  50%       { box-shadow: 0 0 28px 8px rgba(251,191,36,0.75), 0 0 60px 14px rgba(251,191,36,0.4); }
+}
+.badge-glow-gold { animation: badge-glow-gold 2.2s ease-in-out infinite; }
+
+@keyframes badge-glow-blue {
+  0%, 100% { box-shadow: 0 0 14px 3px rgba(56,189,248,0.4), 0 0 30px 6px rgba(56,189,248,0.2); }
+  50%       { box-shadow: 0 0 24px 7px rgba(56,189,248,0.7), 0 0 50px 12px rgba(56,189,248,0.35); }
+}
+.badge-glow-blue { animation: badge-glow-blue 2.2s ease-in-out infinite; }
+
+/* ── 배지 float ── */
+@keyframes badge-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-7px); }
+}
+.badge-float { animation: badge-float 3.2s ease-in-out infinite; }
+
+/* ── 별 반짝임 ── */
+@keyframes sparkle {
+  0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); }
+  40%, 60%  { opacity: 1; transform: scale(1) rotate(90deg); }
+}
+.sp-1 { animation: sparkle 2.4s ease-in-out infinite 0s; }
+.sp-2 { animation: sparkle 2.4s ease-in-out infinite 0.48s; }
+.sp-3 { animation: sparkle 2.4s ease-in-out infinite 0.96s; }
+.sp-4 { animation: sparkle 2.4s ease-in-out infinite 1.44s; }
+.sp-5 { animation: sparkle 2.4s ease-in-out infinite 1.92s; }
+
+/* ── 스테퍼 active 펄스 ── */
+@keyframes step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,48,135,0.5); }
+  50%       { box-shadow: 0 0 0 8px rgba(0,48,135,0); }
+}
+.step-pulse { animation: step-pulse 2s ease-out infinite; }
+
+/* ── 지도 마커 핑 ── */
+@keyframes map-ping {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(2.6); opacity: 0;   }
+}
+.map-ping { animation: map-ping 1.5s ease-out infinite; }
+
+/* ── Leaflet 팝업 커스텀 ── */
+.leaflet-popup-content-wrapper {
+  border-radius: 12px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border: none !important;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.5 !important;
+}
+.leaflet-popup-tip-container { display: none !important; }
+.leaflet-popup-close-button {
+  color: white !important;
+  font-size: 18px !important;
+  top: 6px !important;
+  right: 8px !important;
+  line-height: 1 !important;
+}
+/* Zoom control styling */
+.leaflet-control-zoom a {
+  border-radius: 8px !important;
+  font-size: 16px !important;
+  color: #003087 !important;
+  font-weight: 700 !important;
+}
+.leaflet-bar { border-radius: 10px !important; border: none !important; box-shadow: 0 2px 12px rgba(0,0,0,0.15) !important; }

@@ -134,7 +134,7 @@ export default function AdminDashboard() {
         <title>통합 관제 대시보드 | 화성시 AI스마트전략실</title>
       </Head>
 
-      <DashboardLayout role="operator" userName="AI스마트전략실" pageTitle="통합 관제 대시보드">
+      <DashboardLayout pageTitle="통합 관제 대시보드">
 
         {/* ── 페이지 헤더 ── */}
         <div className="bg-gradient-to-r from-hwaseong-blue to-blue-700 rounded-2xl px-6 py-5 text-white flex flex-col sm:flex-row sm:items-center gap-3">

@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/router";
+import { useAuth } from "@/lib/auth-context";
 import type { UserRole } from "@/types/database";
 
 interface NavItem {
@@ -10,25 +12,25 @@ interface NavItem {
 
 const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   learner: [
-    { icon: "📊", label: "학습 현황",       href: "#summary" },
-    { icon: "🗺️", label: "학습 로드맵",     href: "#roadmap" },
-    { icon: "📚", label: "교육 과정 신청",   href: "#courses" },
-    { icon: "📤", label: "강사 파견 요청",   href: "#dispatch" },
-    { icon: "🏅", label: "이수 인증서",      href: "#cert" },
+    { icon: "📊", label: "학습 현황",     href: "#summary" },
+    { icon: "🗺️", label: "학습 로드맵",  href: "#roadmap" },
+    { icon: "📚", label: "교육 과정 신청", href: "#courses" },
+    { icon: "📤", label: "강사 파견 요청", href: "#dispatch" },
+    { icon: "🏅", label: "이수 인증서",   href: "#cert" },
   ],
   instructor: [
-    { icon: "👤", label: "내 프로필",        href: "#profile" },
-    { icon: "📊", label: "임팩트 대시보드",  href: "#kpi" },
-    { icon: "🗺️", label: "스마트 매칭",     href: "/dashboard/matching" },
-    { icon: "📅", label: "강의 일정",        href: "#schedule" },
-    { icon: "📋", label: "활동 기록",        href: "#log" },
+    { icon: "👤", label: "내 프로필",       href: "#profile" },
+    { icon: "📊", label: "임팩트 대시보드", href: "#kpi" },
+    { icon: "🗺️", label: "스마트 매칭",   href: "/dashboard/matching" },
+    { icon: "📅", label: "강의 일정",       href: "#schedule" },
+    { icon: "📋", label: "활동 기록",       href: "#log" },
   ],
   operator: [
-    { icon: "📊", label: "전체 현황",        href: "#kpi" },
-    { icon: "🔗", label: "매칭 관제",        href: "#matching" },
-    { icon: "👥", label: "강사 관리",        href: "#instructors" },
-    { icon: "📚", label: "과정 관리",        href: "#courses" },
-    { icon: "📈", label: "통계 분석",        href: "#stats" },
+    { icon: "📊", label: "전체 현황", href: "#kpi" },
+    { icon: "🔗", label: "매칭 관제", href: "#matching" },
+    { icon: "👥", label: "강사 관리", href: "#instructors" },
+    { icon: "📚", label: "과정 관리", href: "#courses" },
+    { icon: "📈", label: "통계 분석", href: "#stats" },
   ],
 };
 
@@ -54,17 +56,41 @@ const ROLE_META: Record<UserRole, { label: string; badge: string; badgeStyle: st
 };
 
 interface Props {
-  role: UserRole;
-  userName: string;
   pageTitle: string;
   children: React.ReactNode;
 }
 
-export default function DashboardLayout({ role, userName, pageTitle, children }: Props) {
+export default function DashboardLayout({ pageTitle, children }: Props) {
+  const { user, profile, loading, signOut } = useAuth();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, user, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-hwaseong-gray flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || !profile) return null;
+
+  const role = profile.role;
+  const userName = profile.name;
   const navItems = NAV_BY_ROLE[role];
   const meta = ROLE_META[role];
   const initial = userName.charAt(0);
+
+  async function handleSignOut() {
+    await signOut();
+    router.push("/");
+  }
 
   return (
     <div className="min-h-screen bg-hwaseong-gray font-sans flex flex-col">
@@ -84,7 +110,10 @@ export default function DashboardLayout({ role, userName, pageTitle, children }:
         {/* Brand */}
         <Link href="/" className="flex items-center gap-2 flex-shrink-0">
           <div className="w-7 h-7 bg-white rounded-full flex items-center justify-center">
-            <span className="text-hwaseong-blue font-bold text-[8px] leading-tight text-center">화성<br/>시</span>
+            <span className="text-hwaseong-blue font-bold text-[8px] leading-tight text-center">
+              화성
+              <br />시
+            </span>
           </div>
           <span className="font-bold text-sm hidden sm:block">화성 AI 리더 허브</span>
         </Link>
@@ -92,21 +121,28 @@ export default function DashboardLayout({ role, userName, pageTitle, children }:
         <span className="text-blue-300 text-sm hidden sm:block">/</span>
         <span className="text-white font-semibold text-sm truncate">{pageTitle}</span>
 
-        {/* Right: user chip */}
+        {/* Right: user chip + logout */}
         <div className="ml-auto flex items-center gap-2">
-          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full hidden sm:block ${meta.badgeStyle} bg-opacity-90`}>
+          <span
+            className={`text-xs font-semibold px-2.5 py-1 rounded-full hidden sm:block ${meta.badgeStyle} bg-opacity-90`}
+          >
             {meta.badge}
           </span>
-          <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${meta.avatarBg} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
+          <div
+            className={`w-8 h-8 rounded-full bg-gradient-to-br ${meta.avatarBg} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}
+          >
             {initial}
           </div>
           <div className="hidden sm:block">
             <p className="text-xs font-semibold leading-tight">{userName}</p>
             <p className="text-xs text-blue-300 leading-tight">{meta.label}</p>
           </div>
-          <Link href="/" className="ml-2 text-xs text-blue-300 hover:text-white transition-colors hidden md:block">
-            홈으로 →
-          </Link>
+          <button
+            onClick={handleSignOut}
+            className="ml-2 text-xs text-blue-300 hover:text-white transition-colors border border-blue-400/40 hover:border-white/60 rounded-lg px-2.5 py-1 hidden md:block"
+          >
+            로그아웃
+          </button>
         </div>
       </header>
 
@@ -128,7 +164,9 @@ export default function DashboardLayout({ role, userName, pageTitle, children }:
           {/* User mini-profile */}
           <div className="p-4 border-b border-gray-100">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${meta.avatarBg} flex items-center justify-center text-white font-bold flex-shrink-0`}>
+              <div
+                className={`w-10 h-10 rounded-full bg-gradient-to-br ${meta.avatarBg} flex items-center justify-center text-white font-bold flex-shrink-0`}
+              >
                 {initial}
               </div>
               <div className="min-w-0">
@@ -155,8 +193,8 @@ export default function DashboardLayout({ role, userName, pageTitle, children }:
             ))}
           </nav>
 
-          {/* Bottom: home link */}
-          <div className="p-3 border-t border-gray-100">
+          {/* Bottom: home + logout */}
+          <div className="p-3 border-t border-gray-100 space-y-1">
             <Link
               href="/"
               className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-hwaseong-blue rounded-lg hover:bg-hwaseong-light transition-colors"
@@ -164,6 +202,13 @@ export default function DashboardLayout({ role, userName, pageTitle, children }:
               <span>←</span>
               <span>메인 페이지로 돌아가기</span>
             </Link>
+            <button
+              onClick={handleSignOut}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+            >
+              <span>↩</span>
+              <span>로그아웃</span>
+            </button>
           </div>
         </aside>
 

@@ -306,7 +306,7 @@ export default function LearningDashboard() {
         <title>학습 대시보드 | 화성 AI 리더 허브</title>
       </Head>
 
-      <DashboardLayout role="learner" userName="홍길동" pageTitle="학습 대시보드">
+      <DashboardLayout pageTitle="학습 대시보드">
 
         {/* ── 전체 진도 요약 ── */}
         <div className="bg-gradient-to-br from-hwaseong-blue to-hwaseong-skyblue rounded-2xl p-6 text-white">

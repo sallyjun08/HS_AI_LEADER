@@ -66,7 +66,7 @@ export default function OperatorDashboard() {
         <title>운영자 대시보드 | 화성 AI 리더 허브</title>
       </Head>
 
-      <DashboardLayout role="operator" userName="김운영" pageTitle="운영자 관제 대시보드">
+      <DashboardLayout pageTitle="운영자 관제 대시보드">
 
         {/* ── KPI 카드 ── */}
         <div id="kpi" className="grid grid-cols-2 sm:grid-cols-4 gap-4">

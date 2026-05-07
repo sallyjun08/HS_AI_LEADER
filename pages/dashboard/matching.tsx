@@ -117,7 +117,7 @@ export default function MatchingDashboard() {
         <title>스마트 매칭 대시보드 | 화성 AI 리더 허브</title>
       </Head>
 
-      <DashboardLayout role="instructor" userName="박준호" pageTitle="스마트 매칭 대시보드">
+      <DashboardLayout pageTitle="스마트 매칭 대시보드">
 
         {/* ══ 알림 배너 ══════════════════════════════════════ */}
         {newCount > 0 && (

@@ -80,7 +80,7 @@ export default function InstructorDashboard() {
         <title>강사 대시보드 | 화성 AI 리더 허브</title>
       </Head>
 
-      <DashboardLayout role="instructor" userName="박준호" pageTitle="강사 대시보드">
+      <DashboardLayout pageTitle="강사 대시보드">
 
         {/* ══ 프로필 히어로 배너 ══════════════════════════════ */}
         <div id="profile" className="bg-gradient-to-br from-hwaseong-blue via-[#003fa3] to-indigo-700 rounded-3xl overflow-hidden">

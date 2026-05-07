@@ -149,7 +149,8 @@ export default function GNB() {
 
           {/* Desktop CTA */}
           <div className="hidden lg:flex items-center gap-2">
-            <button
+            <Link
+              href="/login"
               className={`px-4 py-2 text-sm font-semibold border-2 rounded-lg transition-colors ${
                 isLight
                   ? "text-hwaseong-blue border-hwaseong-blue hover:bg-hwaseong-light"
@@ -157,7 +158,7 @@ export default function GNB() {
               }`}
             >
               로그인
-            </button>
+            </Link>
             <a href="#roles">
               <button
                 className={`px-4 py-2 text-sm font-semibold rounded-lg shadow transition-colors ${
@@ -250,9 +251,13 @@ export default function GNB() {
           ))}
 
           <div className="px-5 pt-5 space-y-2">
-            <button className="w-full py-3 border-2 border-hwaseong-blue text-hwaseong-blue rounded-lg font-semibold text-sm">
+            <Link
+              href="/login"
+              className="w-full block py-3 border-2 border-hwaseong-blue text-hwaseong-blue rounded-lg font-semibold text-sm text-center"
+              onClick={() => setMobileOpen(false)}
+            >
               로그인
-            </button>
+            </Link>
             <a href="#roles" onClick={() => setMobileOpen(false)}>
               <button className="w-full py-3 bg-hwaseong-blue text-white rounded-lg font-semibold text-sm hover:bg-blue-900 transition-colors">
                 시작하기 →

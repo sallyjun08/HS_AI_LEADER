@@ -46,7 +46,7 @@ export default function LearnerDashboard() {
         <title>학습자 대시보드 | 화성 AI 리더 허브</title>
       </Head>
 
-      <DashboardLayout role="learner" userName="홍길동" pageTitle="학습자 대시보드">
+      <DashboardLayout pageTitle="학습자 대시보드">
 
         {/* ── 학습 대시보드 배너 ── */}
         <Link href="/dashboard/learning">

@@ -12,31 +12,37 @@ function AnimatedCounter({ end, suffix, duration = 2200 }: CounterProps) {
   const started = useRef(false);
 
   useEffect(() => {
+    const run = () => {
+      if (started.current) return;
+      started.current = true;
+      let startTs: number | null = null;
+
+      const tick = (ts: number) => {
+        if (!startTs) startTs = ts;
+        const elapsed = ts - startTs;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        setCount(Math.floor(eased * end));
+        if (progress < 1) requestAnimationFrame(tick);
+        else setCount(end);
+      };
+
+      requestAnimationFrame(tick);
+    };
+
+    /* 뷰포트에 보이면 즉시, 보이지 않으면 마운트 후 300ms 뒤 강제 시작 */
     const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && !started.current) {
-          started.current = true;
-          let startTs: number | null = null;
-
-          const tick = (ts: number) => {
-            if (!startTs) startTs = ts;
-            const elapsed = ts - startTs;
-            const progress = Math.min(elapsed / duration, 1);
-            // ease-out cubic
-            const eased = 1 - Math.pow(1 - progress, 3);
-            setCount(Math.floor(eased * end));
-            if (progress < 1) requestAnimationFrame(tick);
-            else setCount(end);
-          };
-
-          requestAnimationFrame(tick);
-        }
-      },
-      { threshold: 0.4 }
+      ([entry]) => { if (entry.isIntersecting) run(); },
+      { threshold: 0.1 }
     );
 
     if (spanRef.current) observer.observe(spanRef.current);
-    return () => observer.disconnect();
+    const fallback = setTimeout(run, 300);
+
+    return () => {
+      observer.disconnect();
+      clearTimeout(fallback);
+    };
   }, [end, duration]);
 
   return (

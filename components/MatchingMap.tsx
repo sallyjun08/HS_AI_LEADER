@@ -25,71 +25,43 @@ const CFG: Record<
   completed: { color: "#6b7280", glow: "rgba(107,114,128,0.30)", emoji: "📚", label: "강의 완료", labelBg: "#f3f4f6" },
 };
 
-/* ── 화성시 권역 (simplified administrative zones) ─────────── */
-type LatLng = [number, number];
-interface Zone {
-  name: string;
-  color: string;
-  bounds: LatLng[];
-  labelPos: LatLng;
-}
+/* ── 읍면동 → 권역 색상 매핑 ─────────────────────────────── */
+const DISTRICT_STYLE: Record<string, { color: string; zone: string }> = {
+  "동탄1동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄2동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄3동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄4동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄5동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄6동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄7동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄8동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "동탄9동": { color: "#1d4ed8", zone: "동탄 권역" },
+  "새솔동":  { color: "#1d4ed8", zone: "동탄 권역" },
+  "병점1동": { color: "#7c3aed", zone: "병점·진안 권역" },
+  "병점2동": { color: "#7c3aed", zone: "병점·진안 권역" },
+  "진안동":  { color: "#7c3aed", zone: "병점·진안 권역" },
+  "반월동":  { color: "#7c3aed", zone: "병점·진안 권역" },
+  "기배동":  { color: "#7c3aed", zone: "병점·진안 권역" },
+  "화산동":  { color: "#7c3aed", zone: "병점·진안 권역" },
+  "봉담읍":  { color: "#15803d", zone: "봉담·매송 권역" },
+  "매송면":  { color: "#15803d", zone: "봉담·매송 권역" },
+  "향남읍":  { color: "#c2410c", zone: "향남·우정 권역" },
+  "우정읍":  { color: "#c2410c", zone: "향남·우정 권역" },
+  "남양읍":  { color: "#0e7490", zone: "남양·마도 권역" },
+  "마도면":  { color: "#0e7490", zone: "남양·마도 권역" },
+  "비봉면":  { color: "#0e7490", zone: "남양·마도 권역" },
+  "송산면":  { color: "#0e7490", zone: "남양·마도 권역" },
+  "서신면":  { color: "#0e7490", zone: "남양·마도 권역" },
+  "팔탄면":  { color: "#b45309", zone: "팔탄·장안 권역" },
+  "장안면":  { color: "#b45309", zone: "팔탄·장안 권역" },
+  "정남면":  { color: "#b45309", zone: "팔탄·장안 권역" },
+  "양감면":  { color: "#b45309", zone: "팔탄·장안 권역" },
+};
 
-const ZONES: Zone[] = [
-  {
-    name: "동탄 권역",
-    color: "#1d4ed8",
-    bounds: [
-      [37.183, 127.022], [37.185, 127.114], [37.250, 127.112],
-      [37.252, 127.022],
-    ],
-    labelPos: [37.218, 127.067],
-  },
-  {
-    name: "화성·장안 권역",
-    color: "#7c3aed",
-    bounds: [
-      [37.153, 126.952], [37.155, 127.022], [37.242, 127.020],
-      [37.240, 126.950],
-    ],
-    labelPos: [37.198, 126.986],
-  },
-  {
-    name: "팔탄·정남 권역",
-    color: "#b45309",
-    bounds: [
-      [37.090, 126.920], [37.092, 127.022], [37.155, 127.020],
-      [37.153, 126.920],
-    ],
-    labelPos: [37.122, 126.970],
-  },
-  {
-    name: "봉담·매송 권역",
-    color: "#15803d",
-    bounds: [
-      [37.028, 126.870], [37.030, 126.958], [37.105, 126.955],
-      [37.103, 126.870],
-    ],
-    labelPos: [37.066, 126.912],
-  },
-  {
-    name: "향남·우정 권역",
-    color: "#c2410c",
-    bounds: [
-      [37.016, 126.758], [37.018, 126.872], [37.108, 126.870],
-      [37.106, 126.758],
-    ],
-    labelPos: [37.062, 126.814],
-  },
-  {
-    name: "남양·마도 권역",
-    color: "#0e7490",
-    bounds: [
-      [37.153, 126.758], [37.155, 126.924], [37.305, 126.922],
-      [37.303, 126.758],
-    ],
-    labelPos: [37.229, 126.840],
-  },
-];
+/* "화성시 봉담읍" → "봉담읍" */
+function districtKey(temp: string): string {
+  return temp.replace(/^화성시\s*/, "").trim();
+}
 
 /* ── 팝업 HTML ────────────────────────────────────────────── */
 function buildPopup(m: MapMarker): string {
@@ -152,7 +124,6 @@ export default function MatchingMap({ markers }: Props) {
       scrollWheelZoom: false,
     });
 
-    /* CartoDB Voyager — 현대적 컬러 지도 타일 */
     L.tileLayer(
       "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
       {
@@ -165,45 +136,62 @@ export default function MatchingMap({ markers }: Props) {
 
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    /* ── 권역 폴리곤 레이어 ── */
-    ZONES.forEach((zone) => {
-      /* 채움 폴리곤 */
-      L.polygon(zone.bounds, {
-        color:       zone.color,
-        weight:      2.5,
-        dashArray:   "7, 5",
-        fillColor:   zone.color,
-        fillOpacity: 0.10,
-        opacity:     0.75,
-        interactive: false,
-      }).addTo(map);
+    /* ── 행정 경계 GeoJSON 레이어 ── */
+    fetch("/hwaseong-districts.geojson")
+      .then((r) => r.json())
+      .then((geojson) => {
+        L.geoJSON(geojson, {
+          style: (feature) => {
+            const key   = districtKey(feature?.properties?.temp ?? "");
+            const style = DISTRICT_STYLE[key];
+            const color = style?.color ?? "#94a3b8";
+            return {
+              color,
+              weight:      1.8,
+              dashArray:   "5, 4",
+              fillColor:   color,
+              fillOpacity: 0.08,
+              opacity:     0.70,
+            };
+          },
+          onEachFeature: (feature, layer) => {
+            const key      = districtKey(feature?.properties?.temp ?? "");
+            const style    = DISTRICT_STYLE[key];
+            const color    = style?.color ?? "#64748b";
+            const zoneName = style?.zone ?? "";
 
-      /* 권역 이름 라벨 */
-      L.marker(zone.labelPos, {
-        interactive: false,
-        keyboard:    false,
-        icon: L.divIcon({
-          html: `
-            <div style="
-              background:${zone.color}e8;
-              color:white;
-              font-family:'Noto Sans KR',sans-serif;
-              font-size:11px;font-weight:700;
-              padding:3px 10px;
-              border-radius:12px;
-              white-space:nowrap;
-              box-shadow:0 2px 8px rgba(0,0,0,0.22);
-              letter-spacing:-0.2px;
-              border:1.5px solid ${zone.color};
-            ">${zone.name}</div>`,
-          className:  "",
-          iconSize:   [130, 24],
-          iconAnchor: [65, 12],
-        }),
-      }).addTo(map);
-    });
+            layer.bindTooltip(
+              `<div style="
+                font-family:'Noto Sans KR',sans-serif;
+                font-size:11px;font-weight:700;
+                color:${color};
+                background:white;
+                border:1.5px solid ${color};
+                border-radius:6px;
+                padding:3px 8px;
+                white-space:nowrap;
+                box-shadow:0 2px 6px rgba(0,0,0,0.15);
+              ">${key}<br/><span style="font-size:10px;font-weight:400;color:#64748b;">${zoneName}</span></div>`,
+              {
+                permanent:  false,
+                sticky:     true,
+                opacity:    1,
+                className:  "district-tooltip",
+                direction:  "top",
+              }
+            );
 
-    /* ── 강의 마커 (폴리곤 위에 렌더링) ── */
+            layer.on("mouseover", () => {
+              (layer as L.Path).setStyle({ fillOpacity: 0.22, weight: 2.5 });
+            });
+            layer.on("mouseout", () => {
+              (layer as L.Path).setStyle({ fillOpacity: 0.08, weight: 1.8 });
+            });
+          },
+        }).addTo(map);
+      });
+
+    /* ── 강의 마커 ── */
     markers.forEach((m) => {
       L.marker([m.lat, m.lng], { icon: buildIcon(m) })
         .addTo(map)

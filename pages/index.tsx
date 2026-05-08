@@ -34,10 +34,10 @@ const HERO_SLIDES = [
 const PARTICIPANTS = [
   {
     icon: "🎓",
-    title: "시민·기관 (피교육자)",
-    sub: "AI를 배우고 싶은 화성 시민 누구나",
-    desc: "생성형 AI 기초부터 실무 활용까지 단계별 교육 과정을 제공합니다. 학교·기업·기관은 강사 파견을 신청해 맞춤형 교육을 받을 수 있습니다.",
-    tags: ["STEP 1 AI 기초 소양", "STEP 2 심화 과정", "강사 파견 신청", "이수증 발급"],
+    title: "예비 시민 리더",
+    sub: "AI 시민 리더가 되고 싶은 화성 시민 누구나",
+    desc: "AI 기초 소양부터 시민 리더 자격 취득까지 단계별 교육을 받을 수 있습니다. 수료 후 화성시 인증 AI 시민 리더로 활동할 수 있습니다.",
+    tags: ["STEP 1 AI 기초 소양", "STEP 2 시민 리더 양성", "양성 과정 온라인 신청", "이수증·자격 발급"],
     color: "from-sky-500 to-blue-600",
     border: "border-sky-200 hover:border-sky-400",
     btn: "bg-sky-600 hover:bg-sky-700",

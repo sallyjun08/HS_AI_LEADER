@@ -1,9 +1,9 @@
 import Head from "next/head";
 import { useState } from "react";
-import Link from "next/link";
 import DashboardLayout from "@/components/DashboardLayout";
 import SkillTree from "@/components/SkillTree";
 import { MOCK_COURSES } from "@/lib/mock-data";
+import { useAuth } from "@/lib/auth-context";
 import type { Course } from "@/types/database";
 
 const STATUS_LABEL: Record<Course["status"], string> = {
@@ -22,53 +22,84 @@ const STAGE_STYLE: Record<1 | 2 | 3, string> = {
   3: "bg-green-50 text-green-700",
 };
 
-type TabKey = "all" | 1 | 2 | 3;
+type TabKey = "all" | 1 | 2;
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "all", label: "전체" },
   { key: 1,     label: "STEP 1 · 기초 소양" },
-  { key: 2,     label: "STEP 2 · 시민 리더" },
-  { key: 3,     label: "STEP 3 · 기업 맞춤형" },
+  { key: 2,     label: "STEP 2 · 시민 리더 양성" },
 ];
 
-export default function LearnerDashboard() {
-  const [tab, setTab]             = useState<TabKey>("all");
-  const [appliedIds, setApplied]  = useState<Set<string>>(new Set());
-  const [modal, setModal]         = useState<Course | null>(null);
-  const [showRequest, setShowReq] = useState(false);
-  const [form, setForm] = useState({ org: "", theme: "", date: "", size: "", location: "" });
+const DISTRICTS = [
+  "향남읍", "남양읍", "우정읍", "장안면", "양감면", "정남면", "마도면",
+  "송산면", "서신면", "팔탄면", "매송면", "비봉면", "동탄1동", "동탄2동",
+  "동탄3동", "동탄4동", "동탄5동", "동탄6동", "동탄7동", "동탄8동",
+  "병점1동", "병점2동", "진안동", "반월동", "기배동", "화산동",
+  "능동", "기타",
+];
 
-  const courses = tab === "all" ? MOCK_COURSES : MOCK_COURSES.filter((c) => c.stage === tab);
+const EMPTY_FORM = {
+  name: "", phone: "", district: "", job: "",
+  motivation: "", step: "1" as "1" | "2", hasExperience: false, agreed: false,
+};
+
+export default function LearnerDashboard() {
+  const { profile } = useAuth();
+  const displayName = profile?.name ?? "시민";
+
+  const [tab, setTab]            = useState<TabKey>("all");
+  const [appliedIds, setApplied] = useState<Set<string>>(new Set());
+  const [modal, setModal]        = useState<Course | null>(null);
+  const [showApply, setShowApply] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [form, setForm]          = useState(EMPTY_FORM);
+
+  const courses = (tab === "all"
+    ? MOCK_COURSES
+    : MOCK_COURSES.filter((c) => c.stage === tab)
+  ).filter((c) => c.stage !== 3);
+
+  function handleFormChange(key: keyof typeof EMPTY_FORM, value: string | boolean) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handleSubmit() {
+    if (!form.name || !form.phone || !form.district || !form.motivation || !form.agreed) return;
+    setSubmitted(true);
+  }
 
   return (
     <>
       <Head>
-        <title>학습자 대시보드 | 화성 AI 리더 허브</title>
+        <title>예비 시민 리더 대시보드 | 화성 AI 리더 허브</title>
       </Head>
 
-      <DashboardLayout pageTitle="학습자 대시보드">
+      <DashboardLayout pageTitle="예비 시민 리더 대시보드">
 
-        {/* ── 학습 대시보드 배너 ── */}
-        <Link href="/dashboard/learning">
-          <div className="bg-gradient-to-r from-hwaseong-blue to-hwaseong-skyblue rounded-2xl p-5 flex items-center gap-4 cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all">
-            <div className="text-4xl">🗺️</div>
-            <div className="flex-1">
-              <p className="text-white font-bold text-base">학습 대시보드 — 로드맵 & 디지털 배지</p>
-              <p className="text-blue-200 text-xs mt-0.5">현재 2단계 수강 중 · 학습 진도 55% · 배지 1개 취득</p>
-            </div>
-            <div className="bg-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-lg flex-shrink-0">
-              바로가기 →
-            </div>
-          </div>
-        </Link>
+        {/* ── 개인화 환영 배너 ── */}
+        <div className="bg-gradient-to-r from-hwaseong-blue to-hwaseong-skyblue rounded-2xl p-6 text-white">
+          <p className="text-blue-200 text-sm mb-1">환영합니다</p>
+          <h2 className="text-xl font-bold mb-1">
+            {displayName}님, 화성의 AI 미래를 함께 이끌 준비가 되셨나요?
+          </h2>
+          <p className="text-blue-100 text-sm">
+            현재 <strong className="text-white">47명</strong>의 AI 시민 리더가 활동 중이며, 누적 <strong className="text-white">156회</strong>의 강의가 진행됐습니다.
+          </p>
+          <button
+            onClick={() => { setShowApply(true); setSubmitted(false); setForm(EMPTY_FORM); }}
+            className="mt-4 bg-white text-hwaseong-blue font-bold text-sm px-6 py-2.5 rounded-xl hover:bg-blue-50 transition-colors shadow"
+          >
+            AI 시민 리더 양성 과정 신청하기 →
+          </button>
+        </div>
 
         {/* ── 요약 카드 ── */}
-        <div id="summary" className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { label: "이수 과정",   value: "2개",                  icon: "✅", color: "bg-green-500" },
+            { label: "이수 과정",   value: "2개", icon: "✅", color: "bg-green-500" },
             { label: "신청 과정",   value: `${appliedIds.size}개`, icon: "📋", color: "bg-hwaseong-blue" },
-            { label: "취득 수료증", value: "2장",                  icon: "🏅", color: "bg-amber-500" },
-            { label: "현재 진행",   value: "1개",                  icon: "▶",  color: "bg-sky-500" },
+            { label: "취득 수료증", value: "2장", icon: "🏅", color: "bg-amber-500" },
+            { label: "현재 진행",   value: "1개", icon: "▶",  color: "bg-sky-500" },
           ].map((c) => (
             <div key={c.label} className="bg-white rounded-2xl p-4 flex items-center gap-3 shadow-sm border border-gray-100">
               <div className={`w-10 h-10 ${c.color} rounded-xl flex items-center justify-center text-lg flex-shrink-0`}>
@@ -83,12 +114,12 @@ export default function LearnerDashboard() {
         </div>
 
         {/* ── 학습 로드맵 ── */}
-        <section id="roadmap" className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <section className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-5">
             <div>
               <h2 className="font-bold text-hwaseong-text text-lg">나의 학습 로드맵</h2>
               <p className="text-sm text-gray-500 mt-0.5">
-                AI 기초 소양 → 시민 리더 → 강사 활동으로 이어지는 성장 경로
+                AI 기초 소양 → 시민 리더 양성 → AI 시민 리더 자격 취득
               </p>
             </div>
             <span className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded-full font-medium">
@@ -99,9 +130,12 @@ export default function LearnerDashboard() {
         </section>
 
         {/* ── 교육 과정 신청 ── */}
-        <section id="courses">
+        <section>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <h2 className="font-bold text-hwaseong-text text-lg">교육 과정 신청</h2>
+            <div>
+              <h2 className="font-bold text-hwaseong-text text-lg">교육 과정 신청</h2>
+              <p className="text-xs text-gray-400 mt-0.5">STEP 1·2 과정 — AI 시민 리더 양성 과정</p>
+            </div>
             <div className="flex flex-wrap gap-2">
               {TABS.map((t) => (
                 <button
@@ -124,7 +158,6 @@ export default function LearnerDashboard() {
               const isApplied = appliedIds.has(c.id);
               const canApply  = c.status === "recruiting" && !isApplied;
               const pct       = Math.round((c.enrolled / c.capacity) * 100);
-
               return (
                 <div
                   key={c.id}
@@ -147,9 +180,7 @@ export default function LearnerDashboard() {
                     <div className="space-y-1 text-xs text-gray-500">
                       <div className="flex gap-2"><span>📅</span><span>{c.schedule}</span></div>
                       <div className="flex gap-2"><span>📍</span><span>{c.location}</span></div>
-                      <div className="flex gap-2 text-hwaseong-blue font-medium">
-                        <span>🏅</span><span>{c.cert}</span>
-                      </div>
+                      <div className="flex gap-2 text-hwaseong-blue font-medium"><span>🏅</span><span>{c.cert}</span></div>
                     </div>
                   </div>
                   <div className="px-5 pb-4">
@@ -176,7 +207,7 @@ export default function LearnerDashboard() {
                           : "bg-gray-100 text-gray-400 cursor-not-allowed"
                       }`}
                     >
-                      {isApplied ? "신청 완료" : canApply ? "원클릭 수강 신청" : STATUS_LABEL[c.status]}
+                      {isApplied ? "신청 완료" : canApply ? "수강 신청" : STATUS_LABEL[c.status]}
                     </button>
                   </div>
                 </div>
@@ -185,65 +216,29 @@ export default function LearnerDashboard() {
           </div>
         </section>
 
-        {/* ── 강사 파견 요청 ── */}
-        <section
-          id="dispatch"
-          className="bg-hwaseong-light border border-blue-100 rounded-2xl p-6"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="font-bold text-hwaseong-text text-lg">강사 파견 요청</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                학교·기업·기관에서 AI 강사를 초청하고 싶으시면 요청해 주세요.
-                운영자가 적합한 강사를 매칭합니다.
-              </p>
-            </div>
-            <button
-              onClick={() => setShowReq(true)}
-              className="flex-shrink-0 bg-hwaseong-blue text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-blue-900 transition-colors shadow-md"
-            >
-              + 파견 요청하기
-            </button>
-          </div>
-        </section>
-
       </DashboardLayout>
 
-      {/* ── 수강 신청 모달 ── */}
+      {/* ── 수강 신청 확인 모달 ── */}
       {modal && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setModal(null)}
-        >
-          <div
-            className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setModal(null)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-4">
               <span className="text-4xl block mb-2">🎓</span>
               <h3 className="font-bold text-hwaseong-text text-lg">수강 신청 확인</h3>
             </div>
-            <div className="bg-hwaseong-gray rounded-xl p-4 mb-4 text-sm space-y-1.5">
+            <div className="bg-[#eef3f9] rounded-xl p-4 mb-4 text-sm space-y-1.5">
               <p className="font-semibold text-hwaseong-text">{modal.title}</p>
               <p className="text-gray-500">일정: {modal.schedule}</p>
               <p className="text-gray-500">장소: {modal.location}</p>
               <p className="text-xs text-hwaseong-blue font-medium">🏅 {modal.cert}</p>
             </div>
-            <p className="text-xs text-gray-400 text-center mb-4">
-              최종 확정은 담당자 확인 후 완료됩니다.
-            </p>
+            <p className="text-xs text-gray-400 text-center mb-4">최종 확정은 담당자 확인 후 완료됩니다.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setModal(null)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
-              >
+              <button onClick={() => setModal(null)} className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50">
                 취소
               </button>
               <button
-                onClick={() => {
-                  setApplied((p) => new Set([...p, modal.id]));
-                  setModal(null);
-                }}
+                onClick={() => { setApplied((p) => new Set([...p, modal.id])); setModal(null); }}
                 className="flex-1 py-2.5 bg-hwaseong-blue text-white rounded-xl text-sm font-semibold hover:bg-blue-900"
               >
                 신청하기
@@ -253,50 +248,159 @@ export default function LearnerDashboard() {
         </div>
       )}
 
-      {/* ── 파견 요청 모달 ── */}
-      {showRequest && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowReq(false)}
-        >
-          <div
-            className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-hwaseong-text text-lg mb-4">강사 파견 요청</h3>
-            <div className="space-y-3">
-              {[
-                { key: "org",      label: "기관명",    placeholder: "예: 동탄초등학교" },
-                { key: "theme",    label: "강의 테마",  placeholder: "예: 어린이 AI 기초 교육" },
-                { key: "date",     label: "희망 일정",  placeholder: "예: 2026-06-14" },
-                { key: "size",     label: "예상 인원",  placeholder: "예: 25" },
-                { key: "location", label: "교육 장소",  placeholder: "예: 학교 교실" },
-              ].map((f) => (
-                <div key={f.key}>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1">{f.label}</label>
-                  <input
-                    value={form[f.key as keyof typeof form]}
-                    onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hwaseong-blue"
-                  />
+      {/* ── 양성 과정 신청 모달 ── */}
+      {showApply && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowApply(false)}>
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+
+            {submitted ? (
+              <div className="p-8 text-center">
+                <span className="text-5xl block mb-4">🎉</span>
+                <h3 className="font-bold text-hwaseong-text text-xl mb-2">신청이 접수됐습니다!</h3>
+                <p className="text-gray-500 text-sm mb-1">화성특례시 AI랩 담당자가 검토 후</p>
+                <p className="text-gray-500 text-sm mb-6">입력하신 연락처로 안내드립니다.</p>
+                <button onClick={() => setShowApply(false)} className="bg-hwaseong-blue text-white px-8 py-3 rounded-xl font-semibold text-sm hover:bg-blue-900">
+                  확인
+                </button>
+              </div>
+            ) : (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="font-bold text-hwaseong-text text-lg">AI 시민 리더 양성 과정 신청</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">화성특례시 AI랩 공식 접수</p>
+                  </div>
+                  <button onClick={() => setShowApply(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
                 </div>
-              ))}
-            </div>
-            <div className="flex gap-3 mt-5">
-              <button
-                onClick={() => setShowReq(false)}
-                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50"
-              >
-                취소
-              </button>
-              <button
-                onClick={() => setShowReq(false)}
-                className="flex-1 py-2.5 bg-hwaseong-blue text-white rounded-xl text-sm font-semibold hover:bg-blue-900"
-              >
-                요청 제출
-              </button>
-            </div>
+
+                <div className="space-y-4">
+                  {/* 희망 단계 */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 block mb-2">희망 참여 단계 *</label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { val: "1", title: "STEP 1", desc: "AI 기초 소양 과정" },
+                        { val: "2", title: "STEP 2", desc: "AI 시민 리더 양성 (STEP 1 이수 후)" },
+                      ].map((s) => (
+                        <button
+                          key={s.val}
+                          type="button"
+                          onClick={() => handleFormChange("step", s.val as "1" | "2")}
+                          className={`p-3 rounded-xl border-2 text-left transition-all ${
+                            form.step === s.val
+                              ? "border-hwaseong-blue bg-hwaseong-light"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                        >
+                          <p className={`text-xs font-bold ${form.step === s.val ? "text-hwaseong-blue" : "text-gray-700"}`}>{s.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{s.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 성명 / 연락처 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-semibold text-gray-700 block mb-1">성명 *</label>
+                      <input
+                        value={form.name}
+                        onChange={(e) => handleFormChange("name", e.target.value)}
+                        placeholder="홍길동"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hwaseong-blue"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-gray-700 block mb-1">연락처 *</label>
+                      <input
+                        value={form.phone}
+                        onChange={(e) => handleFormChange("phone", e.target.value)}
+                        placeholder="010-0000-0000"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hwaseong-blue"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 거주지 */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 block mb-1">거주 지역 (화성시 내) *</label>
+                    <select
+                      value={form.district}
+                      onChange={(e) => handleFormChange("district", e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hwaseong-blue text-gray-700"
+                    >
+                      <option value="">읍/면/동 선택</option>
+                      {DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+
+                  {/* 직업/소속 */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 block mb-1">직업 / 소속</label>
+                    <input
+                      value={form.job}
+                      onChange={(e) => handleFormChange("job", e.target.value)}
+                      placeholder="예: 직장인, 주부, 대학생, 화성시청 등"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hwaseong-blue"
+                    />
+                  </div>
+
+                  {/* 지원 동기 */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 block mb-1">지원 동기 *</label>
+                    <textarea
+                      value={form.motivation}
+                      onChange={(e) => handleFormChange("motivation", e.target.value)}
+                      placeholder="AI 교육에 관심을 갖게 된 계기, 참여 목적 등을 자유롭게 작성해주세요."
+                      rows={3}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-hwaseong-blue resize-none"
+                    />
+                  </div>
+
+                  {/* AI 사전 경험 */}
+                  <div>
+                    <label className="text-xs font-semibold text-gray-700 block mb-2">AI 관련 사전 학습 경험이 있으신가요?</label>
+                    <div className="flex gap-3">
+                      {[{ val: true, label: "있음" }, { val: false, label: "없음" }].map((o) => (
+                        <button
+                          key={String(o.val)}
+                          type="button"
+                          onClick={() => handleFormChange("hasExperience", o.val)}
+                          className={`flex-1 py-2 rounded-lg border-2 text-sm font-medium transition-all ${
+                            form.hasExperience === o.val
+                              ? "border-hwaseong-blue bg-hwaseong-light text-hwaseong-blue"
+                              : "border-gray-200 text-gray-600 hover:border-gray-300"
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 동의 */}
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.agreed}
+                      onChange={(e) => handleFormChange("agreed", e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-hwaseong-blue flex-shrink-0"
+                    />
+                    <span className="text-xs text-gray-500 leading-relaxed">
+                      수집된 개인정보는 AI 시민 리더 양성 과정 운영 목적으로만 사용되며, 화성특례시 개인정보 처리방침에 따라 보호됩니다. <strong className="text-gray-700">개인정보 수집 및 이용에 동의합니다. *</strong>
+                    </span>
+                  </label>
+                </div>
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={!form.name || !form.phone || !form.district || !form.motivation || !form.agreed}
+                  className="mt-6 w-full py-3.5 bg-hwaseong-blue text-white font-bold text-sm rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-md"
+                >
+                  신청서 제출하기
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -4,7 +4,6 @@ import Link from "next/link";
 import GNB from "@/components/GNB";
 import LiveCountBanner from "@/components/LiveCountBanner";
 import Footer from "@/components/Footer";
-import type { UserRole } from "@/types/database";
 
 /* ─── Hero slides ─────────────────────────────── */
 const HERO_SLIDES = [
@@ -31,47 +30,34 @@ const HERO_SLIDES = [
   },
 ];
 
-/* ─── Roles ───────────────────────────────────── */
-const ROLES: {
-  role: UserRole;
-  icon: string;
-  title: string;
-  sub: string;
-  features: string[];
-  href: string;
-  color: string;
-  border: string;
-  btn: string;
-}[] = [
+/* ─── Participants ─────────────────────────────── */
+const PARTICIPANTS = [
   {
-    role: "learner",
     icon: "🎓",
-    title: "피교육자 (시민·기관)",
-    sub: "AI를 배우고 싶은 시민, 교육을 원하는 기관",
-    features: ["교육 로드맵 시각화", "원클릭 수업 신청", "강사 파견 요청", "이수 현황 관리"],
-    href: "/dashboard/learner",
+    title: "시민·기관 (피교육자)",
+    sub: "AI를 배우고 싶은 화성 시민 누구나",
+    desc: "생성형 AI 기초부터 실무 활용까지 단계별 교육 과정을 제공합니다. 학교·기업·기관은 강사 파견을 신청해 맞춤형 교육을 받을 수 있습니다.",
+    tags: ["STEP 1 AI 기초 소양", "STEP 2 심화 과정", "강사 파견 신청", "이수증 발급"],
     color: "from-sky-500 to-blue-600",
     border: "border-sky-200 hover:border-sky-400",
     btn: "bg-sky-600 hover:bg-sky-700",
   },
   {
-    role: "instructor",
     icon: "🏅",
-    title: "강사 (AI 시민 리더)",
-    sub: "AI 시민 리더 자격을 취득한 강사",
-    features: ["포트폴리오 관리", "강의 스케줄 확인", "임팩트 대시보드", "활동 실적 시각화"],
-    href: "/dashboard/instructor",
+    title: "AI 시민 리더 (강사)",
+    sub: "교육을 이수하고 지역을 가르치는 리더",
+    desc: "AI 교육을 수료한 시민이 직접 강사로 성장합니다. 화성시가 인증한 AI 시민 리더로서 지역 학교·기관에 강의를 나가고 활동 실적을 쌓습니다.",
+    tags: ["AI 시민 리더 자격 인증", "강의 배정 및 일정 관리", "활동 실적 포트폴리오", "임팩트 지표 시각화"],
     color: "from-hwaseong-blue to-indigo-700",
     border: "border-blue-200 hover:border-blue-500",
     btn: "bg-hwaseong-blue hover:bg-blue-900",
   },
   {
-    role: "operator",
     icon: "⚙️",
-    title: "운영자 (화성시)",
-    sub: "매칭·배정·통계를 관제하는 화성시 담당자",
-    features: ["강사-수요처 매칭 관제", "교육 장소 배정", "전체 통계 분석", "엑셀 데이터 마이그레이션"],
-    href: "/dashboard/operator",
+    title: "화성시 운영자",
+    sub: "매칭·배정·관제를 담당하는 담당자",
+    desc: "수요처와 강사를 연결하고 전체 교육 현황을 관리합니다. 강사별 실적, 지역별 교육 분포, 만족도 등 데이터를 통합 관제합니다.",
+    tags: ["강사-수요처 자동 매칭", "교육 장소 배정 관리", "전체 통계 및 보고서", "데이터 마이그레이션"],
     color: "from-green-600 to-teal-700",
     border: "border-green-200 hover:border-green-500",
     btn: "bg-green-700 hover:bg-green-800",
@@ -180,9 +166,9 @@ export default function Landing() {
 
             {/* CTA */}
             <div className="flex flex-wrap gap-3">
-              <a href="#roles">
+              <a href="#about">
                 <button className="px-8 py-3.5 bg-white text-hwaseong-blue font-bold text-sm rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
-                  역할 선택하고 시작하기 →
+                  사업 소개 보기 →
                 </button>
               </a>
               <a href="#stats">
@@ -230,48 +216,105 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* ══ 주요 사업 (역할 카드) ═══════════════ */}
+      {/* ══ 사업 개요 ════════════════════════════ */}
+      <section id="about" className="bg-white py-24 px-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-14 text-center">
+            <p className="text-hwaseong-skyblue text-sm font-semibold tracking-widest uppercase mb-3">
+              About Program
+            </p>
+            <h2 className="text-4xl sm:text-5xl font-bold text-hwaseong-text tracking-tight">
+              화성 AI 리더 허브란?
+            </h2>
+            <div className="w-12 h-1 bg-hwaseong-blue rounded-full mt-6 mx-auto" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div className="space-y-6">
+              <p className="text-gray-600 text-lg leading-relaxed">
+                화성특례시가 운영하는 <strong className="text-hwaseong-blue">AI 시민 리더 양성 플랫폼</strong>입니다.
+                시민이 AI를 배우고, 배운 시민이 이웃을 가르치고, 그 선순환이 지역을 바꿉니다.
+              </p>
+              <p className="text-gray-500 text-base leading-relaxed">
+                기존 구글 폼 기반의 수기 관리 방식을 탈피하여 강사 매칭·일정 배정·실적 관리를 하나의 플랫폼에서 처리합니다.
+                화성시 AI랩이 인증한 AI 시민 리더가 학교·기업·기관에 직접 강의를 나가 지역 AI 역량을 높입니다.
+              </p>
+              <div className="grid grid-cols-3 gap-4 pt-4">
+                {[
+                  { num: "3단계", label: "체계적 교육 과정" },
+                  { num: "47명", label: "활동 중인 AI 리더" },
+                  { num: "156회", label: "누적 교육 실적" },
+                ].map((s) => (
+                  <div key={s.label} className="bg-[#eef3f9] rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-hwaseong-blue">{s.num}</p>
+                    <p className="text-xs text-gray-500 mt-1">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {[
+                { step: "STEP 1", title: "AI 기초 소양 과정", desc: "생성형 AI 도구 활용, 프롬프트 작성, 일상 속 AI 실습 — 누구나 참여 가능한 입문 과정", color: "bg-sky-50 border-sky-200" },
+                { step: "STEP 2", title: "AI 시민 리더 과정", desc: "심화 교육 이수 후 화성시 인증 AI 시민 리더 자격 취득. 강사로서 활동 시작", color: "bg-blue-50 border-blue-200" },
+                { step: "STEP 3", title: "기업·기관 맞춤형 파견", desc: "AI 리더가 학교·기업·공공기관에 직접 출강. 수요처별 맞춤 커리큘럼 제공", color: "bg-indigo-50 border-indigo-200" },
+              ].map((item) => (
+                <div key={item.step} className={`${item.color} border rounded-xl p-5 flex gap-4`}>
+                  <span className="bg-hwaseong-blue text-white text-xs font-bold px-2.5 py-1 rounded-full h-fit flex-shrink-0">
+                    {item.step}
+                  </span>
+                  <div>
+                    <h4 className="font-bold text-hwaseong-text text-sm mb-1">{item.title}</h4>
+                    <p className="text-xs text-gray-500 leading-relaxed">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ══ 참여 대상 ════════════════════════════ */}
       <section id="programs" className="bg-[#eef3f9] py-24 px-4">
         <div className="max-w-7xl mx-auto">
           <div className="mb-14">
             <p className="text-hwaseong-skyblue text-sm font-semibold tracking-widest uppercase mb-3">
-              Main Service
+              Who Can Join
             </p>
             <h2 className="text-4xl sm:text-5xl font-bold text-hwaseong-text tracking-tight leading-tight">
-              역할에 최적화된
-              <br />
-              <span className="text-hwaseong-blue">맞춤형 대시보드</span>
+              함께하는 사람들
             </h2>
+            <p className="text-gray-500 mt-4 text-base">
+              로그인 후 역할에 맞는 대시보드에서 신청·관리·관제 기능을 사용할 수 있습니다.
+            </p>
             <div className="w-12 h-1 bg-hwaseong-blue rounded-full mt-6" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6" id="roles">
-            {ROLES.map((r) => (
+            {PARTICIPANTS.map((p) => (
               <div
-                key={r.role}
-                className={`bg-white rounded-2xl border-2 ${r.border} shadow-sm flex flex-col transition-all hover:shadow-xl hover:-translate-y-1`}
+                key={p.title}
+                className={`bg-white rounded-2xl border-2 ${p.border} shadow-sm flex flex-col transition-all hover:shadow-xl hover:-translate-y-1`}
               >
-                {/* Card header */}
-                <div className={`bg-gradient-to-br ${r.color} rounded-t-2xl p-8 text-white text-center`}>
-                  <span className="text-5xl block mb-4">{r.icon}</span>
-                  <h3 className="font-bold text-xl leading-snug">{r.title}</h3>
-                  <p className="text-xs text-white/80 mt-2">{r.sub}</p>
+                <div className={`bg-gradient-to-br ${p.color} rounded-t-2xl p-8 text-white text-center`}>
+                  <span className="text-5xl block mb-4">{p.icon}</span>
+                  <h3 className="font-bold text-xl leading-snug">{p.title}</h3>
+                  <p className="text-xs text-white/80 mt-2">{p.sub}</p>
                 </div>
 
                 <div className="p-6 flex-1 flex flex-col">
-                  <ul className="space-y-2.5 mb-7 flex-1">
-                    {r.features.map((f) => (
-                      <li key={f} className="flex items-center gap-2.5 text-sm text-gray-600">
+                  <p className="text-sm text-gray-600 leading-relaxed mb-5">{p.desc}</p>
+                  <ul className="space-y-2 mb-7 flex-1">
+                    {p.tags.map((t) => (
+                      <li key={t} className="flex items-center gap-2.5 text-sm text-gray-500">
                         <span className="w-1.5 h-1.5 rounded-full bg-hwaseong-skyblue flex-shrink-0" />
-                        {f}
+                        {t}
                       </li>
                     ))}
                   </ul>
-                  <Link href={r.href}>
-                    <button
-                      className={`w-full ${r.btn} text-white py-3.5 rounded-xl font-semibold text-sm transition-colors shadow-sm`}
-                    >
-                      {r.title.split(" ")[0]} 대시보드 입장 →
+                  <Link href="/login">
+                    <button className={`w-full ${p.btn} text-white py-3.5 rounded-xl font-semibold text-sm transition-colors shadow-sm`}>
+                      로그인하여 시작하기 →
                     </button>
                   </Link>
                 </div>

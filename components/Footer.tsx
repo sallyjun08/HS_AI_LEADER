@@ -78,7 +78,7 @@ export default function Footer() {
                 </div>
                 <div>
                   <p className="text-[10px] text-blue-300 font-medium">Hwaseong Special City</p>
-                  <p className="font-bold text-sm">화성 AI 리더 허브</p>
+                  <p className="font-bold text-sm">화성 AI 시민리더 잇다(IT-DA)</p>
                 </div>
               </div>
               <p className="text-blue-300 text-xs leading-relaxed mb-6">

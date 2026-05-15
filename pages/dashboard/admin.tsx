@@ -1,333 +1,457 @@
 import Head from "next/head";
-import { useState } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
-import { MONTHLY_STATS, MOCK_MATCH_REQUESTS, MOCK_COURSES } from "@/lib/mock-data";
-import { ZONES, MONTHS, DEMAND } from "@/components/ZoneHeatmap";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
-/* ZoneHeatmap은 Chart.js 캔버스 — SSR 없이 클라이언트에서만 렌더링 */
-const ZoneHeatmap = dynamic(() => import("@/components/ZoneHeatmap"), { ssr: false });
+type Stats = {
+  leaders: { total: number; verified: number };
+  requests: { total: number; pending: number; matched: number; completed: number };
+  reports: { total: number; totalAttendees: number; avgSatisfaction: number };
+  monthlyStats: { month: string; count: number }[];
+};
 
-/* ── 강사료 목 데이터 ──────────────────────────────────────── */
-const FEE_DATA = [
-  { name: "박준호", expertise: "생성형 AI·업무 자동화", sessions: 12, feePerSession: 300_000 },
-  { name: "이서연", expertise: "AI 윤리·공공행정",       sessions:  8, feePerSession: 280_000 },
-  { name: "김민준", expertise: "AI 기초·디지털 리터러시",sessions: 15, feePerSession: 250_000 },
-  { name: "최유진", expertise: "창업·생성형 AI",          sessions:  6, feePerSession: 290_000 },
-];
+type Leader = {
+  id: string;
+  maskedName: string;
+  realName?: string;
+  certLevel: number;
+  isVerified: boolean;
+  isActive: boolean;
+  specialties: string[];
+  availableRegions: string[];
+  bio: string | null;
+  ratingAvg: number;
+  totalLectures: number;
+  phone?: string | null;
+};
 
-/* ── 이번 달 강사료 증빙 CSV 생성 ─────────────────────────── */
-function downloadFeeCSV() {
-  const now    = new Date();
-  const month  = `${now.getFullYear()}년 ${now.getMonth() + 1}월`;
-  const BOM    = "﻿";
-  const header = "강사명,전문분야,강의횟수,회당강사료(원),합계(원),비고\n";
-  const rows   = FEE_DATA.map((r) =>
-    `${r.name},${r.expertise},${r.sessions},${r.feePerSession.toLocaleString()},${(r.sessions * r.feePerSession).toLocaleString()},지급 예정`
-  ).join("\n");
-  const total  = FEE_DATA.reduce((s, r) => s + r.sessions * r.feePerSession, 0);
-  const footer = `\n합계,,,,${total.toLocaleString()},`;
+type MatchRequest = {
+  id: string;
+  title: string;
+  category: string;
+  target_age: string | null;
+  participant_count: number;
+  start_date: string;
+  address: string | null;
+  status: string;
+  client: { name: string } | null;
+  leader: Leader | null;
+};
 
-  const blob = new Blob([BOM + header + rows + footer], { type: "text/csv;charset=utf-8;" });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href     = url;
-  a.download = `화성시_강사료증빙_${month}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+type Report = {
+  id: string;
+  lecture_date: string;
+  attendance_count: number;
+  report_text: string | null;
+  rating_from_client: number | null;
+  submitted_at: string;
+  match: { title: string; address: string | null; start_date: string; leader: { profiles: { name: string } | null } | null } | null;
+};
 
-/* ── 연간 성과 보고서 PDF (브라우저 인쇄 대화상자 활용) ────── */
-function downloadAnnualReport() {
-  const totalLearners  = MONTHLY_STATS.reduce((s, m) => s + m.learners, 0);
-  const totalSessions  = MONTHLY_STATS.reduce((s, m) => s + m.sessions, 0);
-  const completedCount = MOCK_MATCH_REQUESTS.filter((r) => r.status === "completed").length;
-  const totalFee       = FEE_DATA.reduce((s, r) => s + r.sessions * r.feePerSession, 0);
+const CERT_LABELS: Record<number, string> = { 1: "Lv.1 기초", 2: "Lv.2 리더", 3: "Lv.3 전문" };
 
-  const zoneRows = ZONES.map((zone, zi) => {
-    const total = DEMAND[zi].reduce((s, v) => s + v, 0);
-    return `<tr><td>${zone}</td><td>${total}건</td><td>${MONTHS[DEMAND[zi].indexOf(Math.max(...DEMAND[zi]))]}</td></tr>`;
-  }).join("");
-
-  const html = `<!DOCTYPE html><html lang="ko"><head>
-  <meta charset="UTF-8"/>
-  <title>화성시 AI 시민 리더 허브 연간 성과 보고서</title>
-  <style>
-    body { font-family: 'Noto Sans KR', sans-serif; padding: 40px; color: #1e293b; }
-    h1   { color: #003087; border-bottom: 3px solid #003087; padding-bottom: 8px; }
-    h2   { color: #0066cc; margin-top: 28px; }
-    .kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin: 20px 0; }
-    .kpi { background: #f0f4ff; border-radius: 12px; padding: 16px; text-align: center; }
-    .kpi .val { font-size: 28px; font-weight: 700; color: #003087; }
-    .kpi .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th    { background: #003087; color: white; padding: 8px 12px; text-align: left; font-size: 13px; }
-    td    { padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
-    tr:nth-child(even) td { background: #f8fafc; }
-    .footer { margin-top: 40px; font-size: 11px; color: #94a3b8; text-align: center; }
-  </style></head><body>
-  <h1>화성시 AI 시민 리더 허브<br/>2026년 상반기 성과 보고서</h1>
-  <p style="color:#64748b;font-size:13px;">작성일: ${new Date().toLocaleDateString("ko-KR")} | 화성시 AI스마트전략실</p>
-
-  <div class="kpi-grid">
-    <div class="kpi"><div class="val">${totalSessions}</div><div class="lbl">총 강의 횟수</div></div>
-    <div class="kpi"><div class="val">${totalLearners}</div><div class="lbl">누적 수강생</div></div>
-    <div class="kpi"><div class="val">${completedCount}</div><div class="lbl">완료 매칭</div></div>
-    <div class="kpi"><div class="val">${(totalFee / 10000).toFixed(0)}만원</div><div class="lbl">강사료 집행</div></div>
-  </div>
-
-  <h2>권역별 교육 수요 현황</h2>
-  <table><thead><tr><th>권역</th><th>총 수요 건수</th><th>수요 집중 월</th></tr></thead>
-  <tbody>${zoneRows}</tbody></table>
-
-  <h2>강사별 활동 실적</h2>
-  <table><thead><tr><th>강사명</th><th>전문분야</th><th>강의 횟수</th><th>강사료 합계</th></tr></thead>
-  <tbody>${FEE_DATA.map(r => `<tr><td>${r.name}</td><td>${r.expertise}</td><td>${r.sessions}회</td><td>${(r.sessions*r.feePerSession).toLocaleString()}원</td></tr>`).join("")}</tbody></table>
-
-  <h2>월별 교육 실적 추이</h2>
-  <table><thead><tr><th>월</th><th>강의 횟수</th><th>수강생 수</th></tr></thead>
-  <tbody>${MONTHLY_STATS.map(m => `<tr><td>${m.month}</td><td>${m.sessions}회</td><td>${m.learners}명</td></tr>`).join("")}</tbody></table>
-
-  <div class="footer">본 보고서는 화성시 AI스마트전략실 통합 관제 시스템에서 자동 생성되었습니다.</div>
-  </body></html>`;
-
-  const win = window.open("", "_blank", "width=900,height=700");
-  if (!win) return;
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 500);
-}
-
-/* ── 수요 합계로 권역 순위 계산 ──────────────────────────── */
-const ZONE_TOTALS = ZONES.map((zone, zi) => ({
-  zone,
-  total: DEMAND[zi].reduce((s, v) => s + v, 0),
-  peak : MONTHS[DEMAND[zi].indexOf(Math.max(...DEMAND[zi]))],
-  trend: DEMAND[zi][DEMAND[zi].length - 1] > DEMAND[zi][0] ? "↑" : "→",
-})).sort((a, b) => b.total - a.total);
-
-/* ── 컴포넌트 ─────────────────────────────────────────────── */
 export default function AdminDashboard() {
-  const [feeToast,    setFeeToast]    = useState(false);
-  const [reportToast, setReportToast] = useState(false);
+  const { user, loading, signOut } = useAuth();
+  const router = useRouter();
+  const [tab, setTab] = useState<"stats" | "leaders" | "requests" | "matching" | "reports">("stats");
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [leaders, setLeaders] = useState<Leader[]>([]);
+  const [requests, setRequests] = useState<MatchRequest[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
 
-  const totalLearners  = MONTHLY_STATS.reduce((s, m) => s + m.learners, 0);
-  const totalSessions  = MONTHLY_STATS.reduce((s, m) => s + m.sessions, 0);
-  const pendingCount   = MOCK_MATCH_REQUESTS.filter((r) => r.status === "pending").length;
-  const totalFee       = FEE_DATA.reduce((s, r) => s + r.sessions * r.feePerSession, 0);
+  const [selectedReq, setSelectedReq] = useState<MatchRequest | null>(null);
+  const [scoredLeaders, setScoredLeaders] = useState<(Leader & { matchScore?: number })[]>([]);
+  const [matching, setMatching] = useState(false);
+  const [matchSuccess, setMatchSuccess] = useState(false);
 
-  function handleFeeDownload() {
-    downloadFeeCSV();
-    setFeeToast(true);
-    setTimeout(() => setFeeToast(false), 3000);
+  useEffect(() => {
+    if (!loading && (!user || user.role !== "admin")) router.replace("/login");
+  }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      fetch("/api/admin/stats").then((r) => r.json()),
+      fetch("/api/leaders").then((r) => r.json()),
+      fetch("/api/match-requests").then((r) => r.json()),
+      fetch("/api/activity-reports").then((r) => r.json()),
+    ]).then(([s, l, rq, rp]) => {
+      setStats(s); setLeaders(l); setRequests(rq); setReports(rp);
+    });
+  }, [user]);
+
+  async function handleVerify(id: string, isVerified: boolean, certLevel?: number) {
+    await fetch(`/api/admin/leaders/${id}/verify`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isVerified, ...(certLevel !== undefined && { certLevel }) }),
+    });
+    const updated = await fetch("/api/leaders").then((r) => r.json());
+    setLeaders(updated);
   }
-  function handleReportDownload() {
-    downloadAnnualReport();
-    setReportToast(true);
-    setTimeout(() => setReportToast(false), 3000);
+
+  function selectRequestForMatching(req: MatchRequest) {
+    setSelectedReq(req);
+    setMatchSuccess(false);
+    const scored = leaders
+      .filter((l) => l.isVerified && l.isActive)
+      .map((leader) => {
+        let score = 0;
+        if (leader.availableRegions.some((r) => req.address?.includes(r) || r.includes(req.address ?? ""))) score += 30;
+        const catWords = req.category.split(/[\s,]+/);
+        const matched = leader.specialties.filter((s) => catWords.some((w) => s.includes(w) || w.includes(s)));
+        score += Math.min(matched.length * 15, 40);
+        score += (leader.ratingAvg / 5) * 20;
+        score += Math.min(leader.totalLectures, 10);
+        return { ...leader, matchScore: Math.round(score) };
+      })
+      .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+    setScoredLeaders(scored);
   }
+
+  async function doMatch(leaderId: string) {
+    if (!selectedReq) return;
+    setMatching(true);
+    const leader = scoredLeaders.find((l) => l.id === leaderId);
+    const res = await fetch(`/api/admin/match-requests/${selectedReq.id}/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leaderId,
+        matchScore:      leader?.matchScore ?? 0,
+        regionScore:     calcRegionScore(leader, selectedReq),
+        specialtyScore:  calcSpecialtyScore(leader, selectedReq),
+        ratingScore:     Math.round(((leader?.ratingAvg ?? 0) / 5) * 20),
+        experienceScore: Math.min(leader?.totalLectures ?? 0, 10),
+      }),
+    });
+    if (res.ok) {
+      setMatchSuccess(true);
+      const updated = await fetch("/api/match-requests").then((r) => r.json());
+      setRequests(updated);
+    }
+    setMatching(false);
+  }
+
+  if (loading || !user) {
+    return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
+  }
+
+  const pendingRequests = requests.filter((r) => r.status === "pending");
 
   return (
     <>
-      <Head>
-        <title>통합 관제 대시보드 | 화성시 AI스마트전략실</title>
-      </Head>
-
+      <Head><title>관리자 대시보드 | 화성 AI 시민리더 잇다</title></Head>
       <DashboardLayout pageTitle="통합 관제 대시보드">
 
-        {/* ── 페이지 헤더 ── */}
-        <div className="bg-gradient-to-r from-hwaseong-blue to-blue-700 rounded-2xl px-6 py-5 text-white flex flex-col sm:flex-row sm:items-center gap-3">
+        {/* 관리자 헤더 */}
+        <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl p-6 flex items-center gap-5">
+          <div className="w-14 h-14 bg-white/10 border border-white/20 rounded-2xl flex items-center justify-center text-2xl">⚙️</div>
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs bg-white/20 px-2.5 py-0.5 rounded-full font-semibold">화성시 AI스마트전략실</span>
-              <span className="text-xs text-blue-200">관리자 전용</span>
-            </div>
-            <h1 className="text-xl sm:text-2xl font-bold">통합 관제 대시보드</h1>
-            <p className="text-sm text-blue-200 mt-0.5">교육 수요 히트맵 · 강사 배정 · 행정 자동화를 한 곳에서 관리하세요</p>
+            <h2 className="text-xl font-black text-white">{user.name}</h2>
+            <p className="text-gray-300 text-sm">화성특례시 AI 잇다 · 관리자</p>
           </div>
-          <div className="text-right text-xs text-blue-200">
-            <p className="font-semibold text-white text-sm">2026년 상반기</p>
-            <p>최종 업데이트: 방금 전</p>
+          <div className="flex items-center gap-2">
+            {pendingRequests.length > 0 && (
+              <span className="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+                매칭 대기 {pendingRequests.length}건
+              </span>
+            )}
+            <button onClick={signOut} className="text-xs bg-white/10 border border-white/30 text-white px-4 py-2 rounded-xl hover:bg-white/20 transition-colors">로그아웃</button>
           </div>
         </div>
 
-        {/* ── KPI 카드 ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: "총 강의 횟수",   value: `${totalSessions}회`,  icon: "📋", color: "bg-hwaseong-blue", sub: "2026 상반기" },
-            { label: "누적 수강생",    value: `${totalLearners}명`,  icon: "👥", color: "bg-sky-500",       sub: "전 권역 합산" },
-            { label: "대기 매칭",      value: `${pendingCount}건`,   icon: "⏳", color: "bg-amber-500",     sub: "즉시 처리 필요" },
-            { label: "강사료 집행",    value: `${(totalFee/10000).toFixed(0)}만원`, icon: "💰", color: "bg-green-600", sub: "이번 달 예정" },
-          ].map((c) => (
-            <div key={c.label} className="bg-white rounded-2xl p-4 flex items-center gap-3 shadow-sm border border-gray-100">
-              <div className={`w-10 h-10 ${c.color} rounded-xl flex items-center justify-center text-lg flex-shrink-0`}>
-                {c.icon}
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">{c.label}</p>
-                <p className="text-2xl font-bold text-hwaseong-text">{c.value}</p>
-                <p className="text-xs text-gray-400">{c.sub}</p>
-              </div>
-            </div>
+        {/* 탭 */}
+        <div className="flex gap-1 bg-gray-100 rounded-2xl p-1 overflow-x-auto">
+          {(["stats", "leaders", "requests", "matching", "reports"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-shrink-0 px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                tab === t ? "bg-white text-hwaseong-blue shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {t === "stats" ? "📊 통계" : t === "leaders" ? "🏅 강사 관리" : t === "requests" ? "📋 요청 목록" : t === "matching" ? "🔗 스마트 매칭" : "📄 활동 보고"}
+            </button>
           ))}
         </div>
 
-        {/* ── 히트맵 ── */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-4">
-            <div>
-              <h2 className="font-bold text-hwaseong-text text-lg">권역별 교육 수요 히트맵</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                Chart.js (<code className="bg-gray-100 px-1 rounded text-xs">chartjs-chart-matrix</code>) 기반 —
-                색이 진할수록 수요가 높습니다
-              </p>
-            </div>
-            {/* 범례 */}
-            <div className="flex items-center gap-1.5 text-xs text-gray-500 flex-shrink-0">
-              <span>낮음</span>
-              {[0.08, 0.28, 0.48, 0.68, 0.88].map((a) => (
-                <span
-                  key={a}
-                  className="inline-block w-5 h-5 rounded"
-                  style={{ background: `rgba(0,102,204,${a})` }}
-                />
+        {/* 통계 탭 */}
+        {tab === "stats" && stats && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: "전체 강사", value: stats.leaders.total, sub: `인증 ${stats.leaders.verified}명`, icon: "👥", color: "bg-hwaseong-blue" },
+                { label: "매칭 대기", value: stats.requests.pending, sub: "처리 필요", icon: "⏳", color: "bg-amber-500" },
+                { label: "누적 수강생", value: stats.reports.totalAttendees, sub: "명", icon: "🎓", color: "bg-green-600" },
+                { label: "평균 만족도", value: `${stats.reports.avgSatisfaction}점`, sub: "5점 만점", icon: "⭐", color: "bg-sky-500" },
+              ].map((c) => (
+                <div key={c.label} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                  <div className={`w-9 h-9 ${c.color} rounded-xl flex items-center justify-center text-base mb-2`}>{c.icon}</div>
+                  <p className="text-2xl font-black text-hwaseong-text">{c.value}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{c.label} · {c.sub}</p>
+                </div>
               ))}
-              <span>높음</span>
             </div>
-          </div>
 
-          <ZoneHeatmap />
+            {stats.monthlyStats.length > 0 && (
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <h3 className="font-bold text-hwaseong-text mb-4">월별 강의 완료 현황</h3>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={stats.monthlyStats} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
+                    <Bar dataKey="count" name="강의 수" fill="#003087" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
 
-          {/* 권역별 수요 순위 요약 */}
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-            {ZONE_TOTALS.map((z, i) => (
-              <div key={z.zone} className="bg-gray-50 rounded-xl p-2.5 text-center">
-                <p className="text-xs text-gray-400 mb-0.5">#{i + 1}</p>
-                <p className="text-xs font-bold text-hwaseong-text leading-tight">{z.zone}</p>
-                <p className="text-lg font-bold text-hwaseong-blue">{z.total}<span className="text-xs font-normal text-gray-400">건</span></p>
-                <p className="text-xs text-gray-400">{z.trend} {z.peak} 최대</p>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: "전체 요청", value: stats.requests.total, color: "text-hwaseong-blue" },
+                { label: "매칭 중", value: stats.requests.matched, color: "text-blue-500" },
+                { label: "강의 완료", value: stats.requests.completed, color: "text-green-600" },
+              ].map((s) => (
+                <div key={s.label} className="bg-white rounded-2xl p-4 border border-gray-100 text-center">
+                  <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
+                  <p className="text-xs text-gray-400 mt-1">{s.label}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* 강사 관리 탭 */}
+        {tab === "leaders" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-hwaseong-text">강사 목록 ({leaders.length}명)</h3>
+            </div>
+            {leaders.map((leader) => (
+              <div key={leader.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 bg-hwaseong-blue/10 rounded-xl flex items-center justify-center text-xl font-bold text-hwaseong-blue flex-shrink-0">
+                    {(leader.realName ?? leader.maskedName)[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <p className="font-semibold text-hwaseong-text">{leader.realName ?? leader.maskedName}</p>
+                      {leader.isVerified
+                        ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ 인증됨</span>
+                        : <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">인증 대기</span>
+                      }
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-2">
+                      <span>{CERT_LABELS[leader.certLevel]}</span>
+                      <span>⭐ {leader.ratingAvg.toFixed(1)}</span>
+                      <span>강의 {leader.totalLectures}회</span>
+                    </div>
+                    {leader.specialties.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {leader.specialties.slice(0, 3).map((s) => (
+                          <span key={s} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{s}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2 flex-shrink-0">
+                    {!leader.isVerified ? (
+                      <>
+                        <button onClick={() => handleVerify(leader.id, true, 2)} className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors">Lv.2 인증</button>
+                        <button onClick={() => handleVerify(leader.id, true, 1)} className="text-xs bg-hwaseong-blue text-white px-3 py-1.5 rounded-lg hover:bg-blue-900 transition-colors">Lv.1 인증</button>
+                      </>
+                    ) : (
+                      <button onClick={() => handleVerify(leader.id, false)} className="text-xs border border-red-300 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">인증 취소</button>
+                    )}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
-        </section>
+        )}
 
-        {/* ── 행정 자동화 ── */}
-        <section className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 shadow-lg">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-lg">⚙️</span>
-            <h2 className="font-bold text-white text-lg">행정 자동화</h2>
-            <span className="text-xs bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full font-medium">AI 자동 생성</span>
-          </div>
-          <p className="text-sm text-slate-400 mb-6">반복 행정 업무를 자동으로 처리합니다. 버튼 클릭 한 번으로 완료하세요.</p>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            {/* 강사료 증빙 */}
-            <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center text-2xl flex-shrink-0">
-                  📄
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-sm leading-tight">이번 달 강사료<br/>증빙 자료 생성</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">강사별 강의 내역·금액 CSV</p>
-                </div>
-              </div>
-              <ul className="text-xs text-slate-400 space-y-1 mb-4 pl-1">
-                <li>• 강사명·전문분야·강의 횟수 포함</li>
-                <li>• 회당 강사료 및 합계 자동 계산</li>
-                <li>• 엑셀(CSV, UTF-8 BOM) 형식 출력</li>
-              </ul>
-              <button
-                onClick={handleFeeDownload}
-                className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all
-                  bg-gradient-to-r from-blue-600 to-blue-500
-                  hover:from-blue-500 hover:to-blue-400
-                  active:scale-95 shadow-lg shadow-blue-900/40
-                  flex items-center justify-center gap-2"
-              >
-                <span>⬇</span> 증빙 자료 다운로드 (CSV)
+        {/* 요청 목록 탭 */}
+        {tab === "requests" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-hwaseong-text">전체 매칭 요청 ({requests.length}건)</h3>
+              <button onClick={() => setTab("matching")} className="text-xs bg-hwaseong-blue text-white px-3 py-1.5 rounded-lg">
+                매칭하기 →
               </button>
-              {feeToast && (
-                <p className="text-xs text-green-400 text-center mt-2">✔ 파일이 저장되었습니다</p>
-              )}
             </div>
-
-            {/* 연간 성과 보고서 */}
-            <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center text-2xl flex-shrink-0">
-                  📊
+            {requests.map((req) => (
+              <div key={req.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <p className="font-semibold text-hwaseong-text text-sm">{req.title}</p>
+                    <p className="text-xs text-gray-500">{req.client?.name}</p>
+                  </div>
+                  <StatusBadge status={req.status} />
                 </div>
-                <div>
-                  <h3 className="font-bold text-white text-sm leading-tight">연간 성과 보고서<br/>PDF 다운로드</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">시장 보고용 종합 성과 문서</p>
+                <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                  <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {req.category}</span>
+                  <span className="bg-gray-50 px-2 py-1 rounded-lg">📍 {req.address}</span>
+                  <span className="bg-gray-50 px-2 py-1 rounded-lg">📅 {req.start_date}</span>
+                  <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {req.participant_count}명</span>
                 </div>
+                {req.leader && (
+                  <p className="text-xs text-blue-600 mt-2">배정 강사: {req.leader.realName ?? req.leader.maskedName}</p>
+                )}
               </div>
-              <ul className="text-xs text-slate-400 space-y-1 mb-4 pl-1">
-                <li>• KPI 요약·권역별 수요·강사 실적 포함</li>
-                <li>• 월별 교육 실적 추이 테이블</li>
-                <li>• 브라우저 인쇄 → PDF 저장 방식</li>
-              </ul>
-              <button
-                onClick={handleReportDownload}
-                className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all
-                  bg-gradient-to-r from-purple-600 to-purple-500
-                  hover:from-purple-500 hover:to-purple-400
-                  active:scale-95 shadow-lg shadow-purple-900/40
-                  flex items-center justify-center gap-2"
-              >
-                <span>🖨</span> 성과 보고서 PDF 다운로드
-              </button>
-              {reportToast && (
-                <p className="text-xs text-green-400 text-center mt-2">✔ 인쇄 창이 열렸습니다 — PDF로 저장하세요</p>
-              )}
-            </div>
+            ))}
           </div>
-        </section>
+        )}
 
-        {/* ── 강사료 내역 미리보기 ── */}
-        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="font-bold text-hwaseong-text">이번 달 강사료 내역</h2>
-              <p className="text-xs text-gray-400 mt-0.5">증빙 자료 다운로드 버튼으로 내보낼 수 있습니다</p>
+        {/* 스마트 매칭 탭 */}
+        {tab === "matching" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <h3 className="font-bold text-hwaseong-text">매칭 대기 요청</h3>
+              {pendingRequests.length === 0 && (
+                <div className="bg-white rounded-2xl p-8 text-center border border-gray-100 text-gray-400">
+                  <p className="text-3xl mb-3">🎉</p>
+                  <p className="text-sm">모든 요청이 처리되었습니다.</p>
+                </div>
+              )}
+              {pendingRequests.map((req) => (
+                <button
+                  key={req.id}
+                  onClick={() => selectRequestForMatching(req)}
+                  className={`w-full text-left bg-white rounded-2xl p-4 shadow-sm border-2 transition-all ${
+                    selectedReq?.id === req.id ? "border-hwaseong-blue" : "border-gray-100 hover:border-gray-200"
+                  }`}
+                >
+                  <p className="font-semibold text-hwaseong-text text-sm">{req.title}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{req.client?.name} · {req.address}</p>
+                  <div className="flex gap-2 mt-2 text-xs text-gray-400">
+                    <span>🎯 {req.category}</span>
+                    <span>📅 {req.start_date}</span>
+                  </div>
+                </button>
+              ))}
             </div>
-            <span className="text-sm font-bold text-hwaseong-blue">
-              총 {(totalFee / 10000).toFixed(0)}만 원
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  {["강사명", "전문 분야", "강의 횟수", "회당 강사료", "합계"].map((h) => (
-                    <th key={h} className="text-left text-xs font-semibold text-gray-400 pb-2 pr-4 whitespace-nowrap">{h}</th>
+
+            <div className="space-y-3">
+              <h3 className="font-bold text-hwaseong-text">
+                {selectedReq ? "AI 추천 강사" : "요청을 선택하면 AI가 강사를 추천합니다"}
+              </h3>
+
+              {matchSuccess && (
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-green-700 text-sm font-semibold text-center">
+                  ✅ 매칭이 완료되었습니다. 강사에게 매칭이 통보됩니다.
+                </div>
+              )}
+
+              {selectedReq && !matchSuccess && (
+                <>
+                  {scoredLeaders.length === 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-amber-700 text-sm">
+                      인증된 강사가 없습니다. 먼저 강사 인증을 진행해 주세요.
+                    </div>
+                  )}
+
+                  {scoredLeaders.map((leader, idx) => (
+                    <div key={leader.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${
+                          idx === 0 ? "bg-amber-500" : idx === 1 ? "bg-gray-400" : "bg-orange-400"
+                        }`}>
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-hwaseong-text text-sm">{leader.realName ?? leader.maskedName}</p>
+                            {leader.isVerified && <span className="text-xs text-green-600">✓ 인증</span>}
+                          </div>
+                          <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
+                            <span>⭐ {leader.ratingAvg.toFixed(1)}</span>
+                            <span>강의 {leader.totalLectures}회</span>
+                            <span>{CERT_LABELS[leader.certLevel]}</span>
+                          </div>
+                          {leader.specialties.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {leader.specialties.slice(0, 3).map((s) => (
+                                <span key={s} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{s}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-lg font-black text-hwaseong-blue">{leader.matchScore}점</p>
+                          <p className="text-[10px] text-gray-400">매칭 점수</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => doMatch(leader.id)}
+                        disabled={matching}
+                        className="w-full py-2.5 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-60"
+                      >
+                        {matching ? "매칭 중..." : "이 강사로 매칭하기"}
+                      </button>
+                    </div>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {FEE_DATA.map((r) => (
-                  <tr key={r.name} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="py-2.5 pr-4 font-semibold text-hwaseong-text">{r.name}</td>
-                    <td className="py-2.5 pr-4 text-gray-500 text-xs">{r.expertise}</td>
-                    <td className="py-2.5 pr-4">{r.sessions}회</td>
-                    <td className="py-2.5 pr-4 text-gray-500">{r.feePerSession.toLocaleString()}원</td>
-                    <td className="py-2.5 font-bold text-hwaseong-blue">{(r.sessions * r.feePerSession).toLocaleString()}원</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-gray-200">
-                  <td colSpan={4} className="pt-3 text-xs font-semibold text-gray-500">합계</td>
-                  <td className="pt-3 font-bold text-hwaseong-blue text-base">{totalFee.toLocaleString()}원</td>
-                </tr>
-              </tfoot>
-            </table>
+                </>
+              )}
+            </div>
           </div>
-        </section>
+        )}
+
+        {/* 활동 보고 탭 */}
+        {tab === "reports" && (
+          <div className="space-y-3">
+            <h3 className="font-bold text-hwaseong-text">전체 활동 보고서 ({reports.length}건)</h3>
+            {reports.map((r) => (
+              <div key={r.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <p className="font-semibold text-hwaseong-text text-sm">{r.match?.title}</p>
+                    <p className="text-xs text-gray-500">강사: {r.match?.leader?.profiles?.name} · {r.match?.address}</p>
+                  </div>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{r.lecture_date}</span>
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-2">
+                  <span>참석자 <strong className="text-hwaseong-text">{r.attendance_count}명</strong></span>
+                  {r.rating_from_client !== null && (
+                    <span>만족도 <strong className="text-amber-500">⭐ {r.rating_from_client}</strong></span>
+                  )}
+                </div>
+                {r.report_text && <p className="text-xs text-gray-600 leading-relaxed">{r.report_text}</p>}
+              </div>
+            ))}
+          </div>
+        )}
 
       </DashboardLayout>
     </>
   );
+}
+
+function calcRegionScore(leader: Leader | undefined, req: MatchRequest): number {
+  if (!leader) return 0;
+  return leader.availableRegions.some((r) => req.address?.includes(r) || r.includes(req.address ?? "")) ? 30 : 0;
+}
+
+function calcSpecialtyScore(leader: Leader | undefined, req: MatchRequest): number {
+  if (!leader) return 0;
+  const words = req.category.split(/[\s,]+/);
+  const matched = leader.specialties.filter((s) => words.some((w) => s.includes(w) || w.includes(s)));
+  return Math.min(matched.length * 15, 40);
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    pending:   { label: "대기",    cls: "bg-amber-100 text-amber-700" },
+    matched:   { label: "매칭됨",  cls: "bg-blue-100 text-blue-700" },
+    ongoing:   { label: "진행 중", cls: "bg-green-100 text-green-700" },
+    completed: { label: "완료",    cls: "bg-gray-100 text-gray-600" },
+    cancelled: { label: "취소",    cls: "bg-red-50 text-red-500" },
+    rejected:  { label: "거절됨",  cls: "bg-orange-100 text-orange-700" },
+  };
+  const s = map[status] ?? { label: status, cls: "bg-gray-100 text-gray-500" };
+  return <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${s.cls}`}>{s.label}</span>;
 }

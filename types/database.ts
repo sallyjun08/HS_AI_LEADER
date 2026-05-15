@@ -1,77 +1,95 @@
-export type UserRole = "learner" | "instructor" | "operator";
-export type CourseStatus = "recruiting" | "ongoing" | "closed" | "upcoming";
-export type MatchStatus = "pending" | "matched" | "completed" | "cancelled";
+// Supabase DB 타입 — `supabase gen types typescript` 로 재생성 가능
+export type UserRole = "INSTRUCTOR" | "REQUESTER" | "ADMIN";
 
 export interface Profile {
   id: string;
   name: string;
-  role: UserRole;
   email: string;
-  avatar_url?: string;
-  bio?: string;
-  completed_steps: number[];
+  role: UserRole;
   created_at: string;
 }
 
-export interface Course {
+export interface InstructorProfile {
   id: string;
-  title: string;
-  description: string;
-  stage: 1 | 2 | 3;
-  status: CourseStatus;
-  instructor_id?: string;
-  instructor_name?: string;
-  schedule: string;
-  duration: string;
-  capacity: number;
-  enrolled: number;
-  location: string;
-  cert: string;
-  tags: string[];
+  user_id: string;
+  cert_level: number;
+  cert_number: string | null;
+  is_verified: boolean;
+  is_active: boolean;
+  specialties: string;
+  areas: string;
+  bio: string | null;
+  phone: string | null;
+  public_email: string | null;
+  avg_rating: number;
+  total_lectures: number;
+  created_at: string;
 }
 
-export interface Application {
+export interface RequesterProfile {
   id: string;
-  course_id: string;
   user_id: string;
-  status: "pending" | "approved" | "rejected";
+  org_name: string;
+  org_type: string;
+  contact_phone: string | null;
   created_at: string;
 }
 
 export interface MatchRequest {
   id: string;
   requester_id: string;
-  requester_name: string;
-  requester_org: string;
+  title: string;
   theme: string;
-  preferred_date: string;
+  audience_type: string;
   audience_size: number;
+  preferred_date: string;
   location: string;
-  status: MatchStatus;
-  instructor_id?: string;
-  instructor_name?: string;
+  notes: string | null;
+  status: string;
   created_at: string;
 }
 
-export interface ActivityLog {
+export interface Match {
   id: string;
+  request_id: string;
   instructor_id: string;
-  title: string;
-  date: string;
-  audience_count: number;
-  location: string;
-  rating: number;
+  instructor_agreed: boolean;
+  requester_agreed: boolean;
+  status: string;
+  revealed_at: string | null;
+  note: string | null;
+  created_at: string;
 }
 
-// Supabase DB type stub — replace with generated types after `supabase gen types`
+export interface ActivityReport {
+  id: string;
+  match_id: string;
+  instructor_id: string;
+  lecture_date: string;
+  attendees: number;
+  summary: string | null;
+  avg_rating: number | null;
+  submitted_at: string;
+}
+
+export interface Review {
+  id: string;
+  report_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
 export type Database = {
   public: {
     Tables: {
-      profiles:      { Row: Profile;      Insert: Omit<Profile, "id" | "created_at">;      Update: Partial<Profile> };
-      courses:       { Row: Course;       Insert: Omit<Course, "id">;                       Update: Partial<Course> };
-      applications:  { Row: Application;  Insert: Omit<Application, "id" | "created_at">;   Update: Partial<Application> };
-      match_requests:{ Row: MatchRequest; Insert: Omit<MatchRequest, "id" | "created_at">; Update: Partial<MatchRequest> };
-      activity_logs: { Row: ActivityLog;  Insert: Omit<ActivityLog, "id">;                  Update: Partial<ActivityLog> };
+      profiles:            { Row: Profile;           Insert: Omit<Profile, "created_at">;           Update: Partial<Profile> };
+      instructor_profiles: { Row: InstructorProfile; Insert: Omit<InstructorProfile, "id" | "created_at">; Update: Partial<InstructorProfile> };
+      requester_profiles:  { Row: RequesterProfile;  Insert: Omit<RequesterProfile, "id" | "created_at">;  Update: Partial<RequesterProfile> };
+      match_requests:      { Row: MatchRequest;      Insert: Omit<MatchRequest, "id" | "created_at">;      Update: Partial<MatchRequest> };
+      matches:             { Row: Match;             Insert: Omit<Match, "id" | "created_at">;             Update: Partial<Match> };
+      activity_reports:    { Row: ActivityReport;    Insert: Omit<ActivityReport, "id" | "submitted_at">;  Update: Partial<ActivityReport> };
+      reviews:             { Row: Review;            Insert: Omit<Review, "id" | "created_at">;            Update: Partial<Review> };
     };
   };
 };

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import { Sparkles, ShieldCheck, ClipboardList } from "lucide-react";
 import GNB from "@/components/GNB";
 import LiveCountBanner from "@/components/LiveCountBanner";
 import Footer from "@/components/Footer";
@@ -8,61 +9,22 @@ import Footer from "@/components/Footer";
 /* ─── Hero slides ─────────────────────────────── */
 const HERO_SLIDES = [
   {
-    bg: "from-[#001845] via-[#003087] to-[#00419e]",
+    bg: "from-[#001845] via-[#004C97] to-[#003d7a]",
     badge: "2026 AI 혁신학교 AI랩 운영 중",
-    head1: "배우고, 가르치고,",
-    head2: "지역을 바꾸다",
-    desc: "구글 폼을 대체하는 통합 신청·관리 플랫폼. 시민 리더의 성장 로드맵과 활동 임팩트를 데이터로 시각화합니다.",
+    desc: "",
   },
   {
-    bg: "from-[#001133] via-[#002766] to-[#004aad]",
+    bg: "from-[#001133] via-[#004C97] to-[#003060]",
     badge: "AI 시민 리더 47명 현재 활동 중",
-    head1: "AI 시민 리더,",
-    head2: "화성을 바꾼다",
-    desc: "일반 시민이 AI를 배우고, 이웃에게 가르치고, 지역 사회를 혁신하는 선순환 생태계를 만들어 갑니다.",
+    desc: "",
   },
   {
-    bg: "from-[#0d1b42] via-[#1a3270] to-[#2660a8]",
+    bg: "from-[#0d1b42] via-[#004C97] to-[#1a3a7a]",
     badge: "누적 교육 횟수 156회 달성",
-    head1: "강사와 수요처,",
-    head2: "스마트하게 연결",
-    desc: "운영자가 적합한 강사를 필터링·매칭하여 학교·기관·기업에 최적의 AI 교육을 제공합니다.",
+    desc: "",
   },
 ];
 
-/* ─── Participants ─────────────────────────────── */
-const PARTICIPANTS = [
-  {
-    icon: "🎓",
-    title: "예비 시민 리더",
-    sub: "AI 시민 리더가 되고 싶은 화성 시민 누구나",
-    desc: "AI 기초 소양부터 시민 리더 자격 취득까지 단계별 교육을 받을 수 있습니다. 수료 후 화성시 인증 AI 시민 리더로 활동할 수 있습니다.",
-    tags: ["STEP 1 AI 기초 소양", "STEP 2 시민 리더 양성", "양성 과정 온라인 신청", "이수증·자격 발급"],
-    color: "from-sky-500 to-blue-600",
-    border: "border-sky-200 hover:border-sky-400",
-    btn: "bg-sky-600 hover:bg-sky-700",
-  },
-  {
-    icon: "🏅",
-    title: "AI 시민 리더 (강사)",
-    sub: "교육을 이수하고 지역을 가르치는 리더",
-    desc: "AI 교육을 수료한 시민이 직접 강사로 성장합니다. 화성시가 인증한 AI 시민 리더로서 지역 학교·기관에 강의를 나가고 활동 실적을 쌓습니다.",
-    tags: ["AI 시민 리더 자격 인증", "강의 배정 및 일정 관리", "활동 실적 포트폴리오", "임팩트 지표 시각화"],
-    color: "from-hwaseong-blue to-indigo-700",
-    border: "border-blue-200 hover:border-blue-500",
-    btn: "bg-hwaseong-blue hover:bg-blue-900",
-  },
-  {
-    icon: "⚙️",
-    title: "화성시 운영자",
-    sub: "매칭·배정·관제를 담당하는 담당자",
-    desc: "수요처와 강사를 연결하고 전체 교육 현황을 관리합니다. 강사별 실적, 지역별 교육 분포, 만족도 등 데이터를 통합 관제합니다.",
-    tags: ["강사-수요처 자동 매칭", "교육 장소 배정 관리", "전체 통계 및 보고서", "데이터 마이그레이션"],
-    color: "from-green-600 to-teal-700",
-    border: "border-green-200 hover:border-green-500",
-    btn: "bg-green-700 hover:bg-green-800",
-  },
-];
 
 /* ─── News board ──────────────────────────────── */
 type NewsTab = "all" | "notice" | "edu" | "press" | "recruit";
@@ -91,13 +53,58 @@ const TICKERS = [
   "공지 | 2026 화성시 AI랩 우수 수강생 장학금 신청 안내.",
 ];
 
-/* ─── Service flow ────────────────────────────── */
-const SERVICE_FLOW = [
-  { step: "01", icon: "👤", title: "가입·인증",    desc: "역할 선택 후 가입. 강사는 교육 수료 데이터로 자동 인증" },
-  { step: "02", icon: "📋", title: "수요 발생",    desc: "피교육자(기관)가 강의 테마·일정·규모를 플랫폼에 요청" },
-  { step: "03", icon: "🔗", title: "운영자 매칭",  desc: "운영자가 적합한 강사를 필터링하여 매칭 및 장소 배정" },
-  { step: "04", icon: "📊", title: "활동 기록",    desc: "강의 완료 후 강사·운영자 대시보드에 실시간 데이터 반영" },
+
+/* ─── Network background SVG ──────────────────── */
+const NET_NODES = [
+  {x:4,  y:8,  r:1.2, d:0   }, {x:18, y:4,  r:0.8, d:0.4 },
+  {x:35, y:11, r:1.0, d:0.8 }, {x:52, y:5,  r:1.4, d:1.2 },
+  {x:68, y:10, r:0.9, d:0.6 }, {x:84, y:4,  r:1.1, d:1.5 },
+  {x:97, y:11, r:0.7, d:0.2 }, {x:10, y:35, r:1.3, d:0.9 },
+  {x:28, y:42, r:0.9, d:0.3 }, {x:45, y:33, r:1.5, d:1.1 },
+  {x:52, y:50, r:2.0, d:0.5 }, {x:62, y:38, r:1.0, d:1.4 },
+  {x:78, y:44, r:1.2, d:0.7 }, {x:94, y:36, r:0.8, d:1.8 },
+  {x:6,  y:68, r:0.9, d:1.0 }, {x:22, y:74, r:1.1, d:0.1 },
+  {x:40, y:65, r:1.3, d:1.6 }, {x:55, y:72, r:0.8, d:0.8 },
+  {x:72, y:67, r:1.0, d:1.2 }, {x:88, y:74, r:1.2, d:0.4 },
+  {x:97, y:60, r:0.7, d:1.7 }, {x:35, y:55, r:1.1, d:0.6 },
+  {x:62, y:22, r:1.3, d:1.3 },
 ];
+const NET_EDGES = [
+  [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],
+  [0,7],[1,7],[2,8],[3,9],[3,22],[4,22],[4,11],[5,12],[6,12],[6,13],
+  [7,8],[8,9],[9,10],[10,11],[11,12],[12,13],
+  [7,14],[8,15],[9,16],[10,16],[10,17],[11,18],[12,18],[12,19],[13,20],
+  [14,15],[15,16],[16,17],[17,18],[18,19],[19,20],
+  [8,21],[9,21],[21,10],[21,16],
+];
+
+function NetworkBg() {
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid slice"
+      aria-hidden="true"
+    >
+      {NET_EDGES.map(([a, b], i) => (
+        <line
+          key={i}
+          x1={NET_NODES[a].x} y1={NET_NODES[a].y}
+          x2={NET_NODES[b].x} y2={NET_NODES[b].y}
+          stroke="white" strokeOpacity={0.12} strokeWidth={0.25}
+        />
+      ))}
+      {NET_NODES.map((n, i) => (
+        <circle key={i} cx={n.x} cy={n.y} r={n.r} fill="white" fillOpacity={0.2}>
+          <animate attributeName="fill-opacity" values="0.1;0.4;0.1"
+            dur={`${2 + (i % 3)}s`} begin={`${n.d}s`} repeatCount="indefinite" />
+          <animate attributeName="r" values={`${n.r};${n.r * 1.5};${n.r}`}
+            dur={`${2 + (i % 3)}s`} begin={`${n.d}s`} repeatCount="indefinite" />
+        </circle>
+      ))}
+    </svg>
+  );
+}
 
 /* ══════════════════════════════════════════════ */
 export default function Landing() {
@@ -115,7 +122,7 @@ export default function Landing() {
   return (
     <>
       <Head>
-        <title>화성 AI 리더 허브 — 화성특례시 AI 시민 리더 양성 플랫폼</title>
+        <title>화성 AI 시민리더 잇다(IT-DA) — 화성특례시 AI 시민 리더 양성 플랫폼</title>
         <meta name="description" content="화성시 AI 혁신학교 AI랩 — 시민 리더 양성 통합 플랫폼" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/favicon.ico" />
@@ -136,47 +143,44 @@ export default function Landing() {
           />
         ))}
 
-        {/* Decorative circles */}
+          {/* Network animation background */}
+        <NetworkBg />
+
+        {/* Decorative radial glow */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-white/5" />
-          <div className="absolute bottom-0 -left-20 w-80 h-80 rounded-full bg-blue-400/10" />
-          <div className="absolute top-1/2 right-1/4 w-64 h-64 rounded-full border border-white/10" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full bg-[#004C97]/30 blur-3xl" />
+          <div className="absolute -top-20 -right-20 w-96 h-96 rounded-full bg-white/5" />
         </div>
 
         {/* Content — top padding clears the fixed GNB (~100px) */}
-        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-36 pb-32 min-h-screen flex flex-col justify-center">
-          <div className="max-w-3xl">
-            {/* Badge */}
-            <span className="inline-flex items-center gap-2 bg-white/15 border border-white/25 text-xs font-semibold px-4 py-1.5 rounded-full mb-7 backdrop-blur-sm text-white">
-              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-              {HERO_SLIDES[slide].badge}
-            </span>
+        <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-36 pb-32 min-h-screen flex flex-col items-center justify-center text-center">
+          {/* Badge */}
+          <span className="inline-flex items-center gap-2 bg-white/15 border border-white/25 text-xs font-semibold px-4 py-1.5 rounded-full mb-8 backdrop-blur-sm text-white">
+            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            {HERO_SLIDES[slide].badge}
+          </span>
 
-            {/* Headline */}
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-white leading-tight tracking-tight mb-6 transition-all duration-700">
-              {HERO_SLIDES[slide].head1}
-              <br />
-              <span className="text-yellow-300">{HERO_SLIDES[slide].head2}</span>
-            </h1>
+          {/* Main slogan */}
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-white leading-tight tracking-tight mb-4">
+            화성의 인재<span className="text-yellow-300">(人)</span>를<br />
+            지역 사회와 <span className="text-yellow-300">잇다,</span>
+          </h1>
+          <p className="text-xl sm:text-2xl font-semibold text-blue-200 mb-10 tracking-wide">
+            미래 교육의 가치를 잇다.
+          </p>
 
-            {/* Sub-text */}
-            <p className="text-blue-100 text-base sm:text-lg leading-relaxed max-w-xl mb-10 transition-all duration-700">
-              {HERO_SLIDES[slide].desc}
-            </p>
-
-            {/* CTA */}
-            <div className="flex flex-wrap gap-3">
-              <a href="#about">
-                <button className="px-8 py-3.5 bg-white text-hwaseong-blue font-bold text-sm rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
-                  사업 소개 보기 →
-                </button>
-              </a>
-              <a href="#stats">
-                <button className="px-8 py-3.5 bg-white/15 border border-white/40 text-white font-semibold text-sm rounded-xl hover:bg-white/25 backdrop-blur-sm transition-colors">
-                  실시간 현황 보기
-                </button>
-              </a>
-            </div>
+          {/* CTA */}
+          <div className="flex flex-wrap gap-4 justify-center">
+            <Link href="/register?role=leader">
+              <button className="px-8 py-4 bg-white text-hwaseong-blue font-bold text-base rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
+                시민 리더로 참여하기 →
+              </button>
+            </Link>
+            <Link href="/register?role=client">
+              <button className="px-8 py-4 bg-white/15 border-2 border-white/60 text-white font-bold text-base rounded-xl hover:bg-white/25 backdrop-blur-sm transition-colors">
+                AI 교육 신청하기
+              </button>
+            </Link>
           </div>
         </div>
 
@@ -216,115 +220,96 @@ export default function Landing() {
         </div>
       </div>
 
-      {/* ══ 사업 개요 ════════════════════════════ */}
+      {/* ══ 플랫폼 소개 ══════════════════════════ */}
       <section id="about" className="bg-white py-24 px-4">
         <div className="max-w-7xl mx-auto">
-          <div className="mb-14 text-center">
+          {/* Section header */}
+          <div className="mb-12 text-center">
             <p className="text-hwaseong-skyblue text-sm font-semibold tracking-widest uppercase mb-3">
-              About Program
+              About Platform
             </p>
             <h2 className="text-4xl sm:text-5xl font-bold text-hwaseong-text tracking-tight">
-              화성 AI 리더 허브란?
+              화성 AI 시민리더 잇다(IT-DA)란?
             </h2>
             <div className="w-12 h-1 bg-hwaseong-blue rounded-full mt-6 mx-auto" />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-6">
-              <p className="text-gray-600 text-lg leading-relaxed">
-                화성특례시가 운영하는 <strong className="text-hwaseong-blue">AI 시민 리더 양성 플랫폼</strong>입니다.
-                시민이 AI를 배우고, 배운 시민이 이웃을 가르치고, 그 선순환이 지역을 바꿉니다.
-              </p>
-              <p className="text-gray-500 text-base leading-relaxed">
-                기존 구글 폼 기반의 수기 관리 방식을 탈피하여 강사 매칭·일정 배정·실적 관리를 하나의 플랫폼에서 처리합니다.
-                화성시 AI랩이 인증한 AI 시민 리더가 학교·기업·기관에 직접 강의를 나가 지역 AI 역량을 높입니다.
-              </p>
-              <div className="grid grid-cols-3 gap-4 pt-4">
-                {[
-                  { num: "3단계", label: "체계적 교육 과정" },
-                  { num: "47명", label: "활동 중인 AI 리더" },
-                  { num: "156회", label: "누적 교육 실적" },
-                ].map((s) => (
-                  <div key={s.label} className="bg-[#eef3f9] rounded-xl p-4 text-center">
-                    <p className="text-2xl font-bold text-hwaseong-blue">{s.num}</p>
-                    <p className="text-xs text-gray-500 mt-1">{s.label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {[
-                { step: "STEP 1", title: "AI 기초 소양 과정", desc: "생성형 AI 도구 활용, 프롬프트 작성, 일상 속 AI 실습 — 누구나 참여 가능한 입문 과정", color: "bg-sky-50 border-sky-200" },
-                { step: "STEP 2", title: "AI 시민 리더 과정", desc: "심화 교육 이수 후 화성시 인증 AI 시민 리더 자격 취득. 강사로서 활동 시작", color: "bg-blue-50 border-blue-200" },
-                { step: "STEP 3", title: "기업·기관 맞춤형 파견", desc: "AI 리더가 학교·기업·공공기관에 직접 출강. 수요처별 맞춤 커리큘럼 제공", color: "bg-indigo-50 border-indigo-200" },
-              ].map((item) => (
-                <div key={item.step} className={`${item.color} border rounded-xl p-5 flex gap-4`}>
-                  <span className="bg-hwaseong-blue text-white text-xs font-bold px-2.5 py-1 rounded-full h-fit flex-shrink-0">
-                    {item.step}
-                  </span>
-                  <div>
-                    <h4 className="font-bold text-hwaseong-text text-sm mb-1">{item.title}</h4>
-                    <p className="text-xs text-gray-500 leading-relaxed">{item.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ══ 참여 대상 ════════════════════════════ */}
-      <section id="programs" className="bg-[#eef3f9] py-24 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="mb-14">
-            <p className="text-hwaseong-skyblue text-sm font-semibold tracking-widest uppercase mb-3">
-              Who Can Join
+          {/* Core message */}
+          <div className="max-w-2xl mx-auto text-center mb-12">
+            <p className="text-gray-700 text-xl leading-relaxed">
+              화성시 내{" "}
+              <strong className="text-hwaseong-blue font-bold">수요처</strong>
+              <span className="text-gray-500 text-base">（학교·기관·기업）</span>와
+              검증된{" "}
+              <strong className="text-hwaseong-blue font-bold">시민 리더</strong>
+              <span className="text-gray-500 text-base">（강사）</span>를{" "}
+              데이터 기반으로 연결하는 전용 매칭 플랫폼입니다.
             </p>
-            <h2 className="text-4xl sm:text-5xl font-bold text-hwaseong-text tracking-tight leading-tight">
-              함께하는 사람들
-            </h2>
-            <p className="text-gray-500 mt-4 text-base">
-              로그인 후 역할에 맞는 대시보드에서 신청·관리·관제 기능을 사용할 수 있습니다.
+            <p className="text-gray-500 text-base mt-4">
+              구글 폼 수기 관리를 탈피해 신청·매칭·활동 보고까지 하나의 플랫폼에서 처리합니다.
             </p>
-            <div className="w-12 h-1 bg-hwaseong-blue rounded-full mt-6" />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6" id="roles">
-            {PARTICIPANTS.map((p) => (
-              <div
-                key={p.title}
-                className={`bg-white rounded-2xl border-2 ${p.border} shadow-sm flex flex-col transition-all hover:shadow-xl hover:-translate-y-1`}
-              >
-                <div className={`bg-gradient-to-br ${p.color} rounded-t-2xl p-8 text-white text-center`}>
-                  <span className="text-5xl block mb-4">{p.icon}</span>
-                  <h3 className="font-bold text-xl leading-snug">{p.title}</h3>
-                  <p className="text-xs text-white/80 mt-2">{p.sub}</p>
-                </div>
-
-                <div className="p-6 flex-1 flex flex-col">
-                  <p className="text-sm text-gray-600 leading-relaxed mb-5">{p.desc}</p>
-                  <ul className="space-y-2 mb-7 flex-1">
-                    {p.tags.map((t) => (
-                      <li key={t} className="flex items-center gap-2.5 text-sm text-gray-500">
-                        <span className="w-1.5 h-1.5 rounded-full bg-hwaseong-skyblue flex-shrink-0" />
-                        {t}
-                      </li>
-                    ))}
-                  </ul>
-                  <Link href="/login">
-                    <button className={`w-full ${p.btn} text-white py-3.5 rounded-xl font-semibold text-sm transition-colors shadow-sm`}>
-                      로그인하여 시작하기 →
-                    </button>
-                  </Link>
-                </div>
+          {/* Stats — 3단계 제거, 2개만 */}
+          <div className="grid grid-cols-2 gap-6 max-w-xs mx-auto mb-16">
+            {[
+              { num: "47명",  label: "활동 중인 AI 리더" },
+              { num: "156회", label: "누적 교육 실적"   },
+            ].map((s) => (
+              <div key={s.label} className="bg-[#eef3f9] rounded-2xl p-6 text-center">
+                <p className="text-3xl font-bold text-hwaseong-blue">{s.num}</p>
+                <p className="text-sm text-gray-600 mt-2 font-medium">{s.label}</p>
               </div>
             ))}
           </div>
+
+          {/* 3-card feature grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* 스마트 매칭 */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all group">
+              <div className="w-14 h-14 bg-hwaseong-light rounded-2xl flex items-center justify-center mb-6 group-hover:bg-hwaseong-blue transition-colors duration-200">
+                <Sparkles className="w-7 h-7 text-hwaseong-blue group-hover:text-white transition-colors duration-200" />
+              </div>
+              <p className="text-xs font-bold text-hwaseong-skyblue uppercase tracking-widest mb-2">데이터 기반 최적화</p>
+              <h3 className="text-xl font-bold text-hwaseong-text mb-3">스마트 매칭</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                <strong className="text-hwaseong-blue font-semibold">강사</strong>의 전문분야·활동 지역·시간대를 분석해{" "}
+                <strong className="text-hwaseong-blue font-semibold">수요처</strong>에 가장 적합한 리더를 추천합니다.
+              </p>
+            </div>
+
+            {/* 안심 프로세스 */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all group">
+              <div className="w-14 h-14 bg-hwaseong-light rounded-2xl flex items-center justify-center mb-6 group-hover:bg-hwaseong-blue transition-colors duration-200">
+                <ShieldCheck className="w-7 h-7 text-hwaseong-blue group-hover:text-white transition-colors duration-200" />
+              </div>
+              <p className="text-xs font-bold text-hwaseong-skyblue uppercase tracking-widest mb-2">신뢰와 보안의 연결</p>
+              <h3 className="text-xl font-bold text-hwaseong-text mb-3">안심 프로세스</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                매칭 확정 전 개인정보를 마스킹해 안전한 환경을 제공하고,
+                화성시가 보증하는 <strong className="text-hwaseong-blue font-semibold">강사</strong> 풀을 관리합니다.
+              </p>
+            </div>
+
+            {/* 행정 자동화 */}
+            <div className="bg-white border border-gray-200 rounded-2xl p-8 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all group">
+              <div className="w-14 h-14 bg-hwaseong-light rounded-2xl flex items-center justify-center mb-6 group-hover:bg-hwaseong-blue transition-colors duration-200">
+                <ClipboardList className="w-7 h-7 text-hwaseong-blue group-hover:text-white transition-colors duration-200" />
+              </div>
+              <p className="text-xs font-bold text-hwaseong-skyblue uppercase tracking-widest mb-2">간편한 활동 관리</p>
+              <h3 className="text-xl font-bold text-hwaseong-text mb-3">행정 자동화</h3>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                복잡한 서류 없이{" "}
+                <strong className="text-hwaseong-blue font-semibold">수요처</strong> 신청부터
+                활동 보고서 제출까지 웹에서 원스톱으로 처리합니다.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ══ LIVE COUNT ═══════════════════════════ */}
+
+{/* ══ LIVE COUNT ═══════════════════════════ */}
       <LiveCountBanner />
 
       {/* ══ 알림마당 (뉴스 보드) ════════════════ */}
@@ -392,36 +377,7 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ══ 서비스 흐름 ══════════════════════════ */}
-      <section id="flow" className="bg-[#eef3f9] py-24 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="mb-14 text-center">
-            <p className="text-hwaseong-skyblue text-sm font-semibold tracking-widest uppercase mb-3">
-              How It Works
-            </p>
-            <h2 className="text-4xl sm:text-5xl font-bold text-hwaseong-text tracking-tight">
-              플랫폼 서비스 흐름
-            </h2>
-            <div className="w-12 h-1 bg-hwaseong-blue rounded-full mt-6 mx-auto" />
-          </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-            {SERVICE_FLOW.map((item) => (
-              <div
-                key={item.step}
-                className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm relative hover:shadow-md transition-shadow"
-              >
-                <span className="absolute -top-3.5 left-5 bg-hwaseong-blue text-white text-xs font-bold px-3 py-0.5 rounded-full">
-                  STEP {item.step}
-                </span>
-                <span className="text-4xl block mb-4 mt-2">{item.icon}</span>
-                <h3 className="font-bold text-hwaseong-text text-sm mb-2">{item.title}</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ══ FOOTER ═══════════════════════════════ */}
       <Footer />

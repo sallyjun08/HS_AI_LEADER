@@ -105,7 +105,7 @@ export default function GNB() {
                 Hwaseong Special City
               </p>
               <p className={`font-bold text-[15px] transition-colors ${isLight ? "text-hwaseong-blue" : "text-white"}`}>
-                화성 AI 리더 허브
+                화성 AI 시민리더 잇다(IT-DA)
               </p>
             </div>
           </Link>
@@ -159,17 +159,16 @@ export default function GNB() {
             >
               로그인
             </Link>
-            <a href="#roles">
-              <button
-                className={`px-4 py-2 text-sm font-semibold rounded-lg shadow transition-colors ${
-                  isLight
-                    ? "bg-hwaseong-blue text-white hover:bg-blue-900"
-                    : "bg-white text-hwaseong-blue hover:bg-blue-50"
-                }`}
-              >
-                시작하기 →
-              </button>
-            </a>
+            <Link
+              href="/register"
+              className={`px-4 py-2 text-sm font-semibold rounded-lg shadow transition-colors ${
+                isLight
+                  ? "bg-hwaseong-blue text-white hover:bg-blue-900"
+                  : "bg-white text-hwaseong-blue hover:bg-blue-50"
+              }`}
+            >
+              회원가입
+            </Link>
           </div>
 
           {/* Mobile hamburger */}
@@ -208,7 +207,7 @@ export default function GNB() {
         }`}
       >
         <div className="bg-hwaseong-blue text-white px-5 py-4 flex items-center justify-between">
-          <span className="font-bold text-sm">화성 AI 리더 허브</span>
+          <span className="font-bold text-sm">화성 AI 시민리더 잇다(IT-DA)</span>
           <button onClick={() => setMobileOpen(false)}>
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -258,11 +257,13 @@ export default function GNB() {
             >
               로그인
             </Link>
-            <a href="#roles" onClick={() => setMobileOpen(false)}>
-              <button className="w-full py-3 bg-hwaseong-blue text-white rounded-lg font-semibold text-sm hover:bg-blue-900 transition-colors">
-                시작하기 →
-              </button>
-            </a>
+            <Link
+              href="/register"
+              className="w-full block py-3 bg-hwaseong-blue text-white rounded-lg font-semibold text-sm text-center hover:bg-blue-900 transition-colors"
+              onClick={() => setMobileOpen(false)}
+            >
+              회원가입 →
+            </Link>
           </div>
         </div>
       </div>

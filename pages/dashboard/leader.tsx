@@ -52,6 +52,7 @@ export default function LeaderDashboard() {
   const [reportForm, setReportForm] = useState({ matchId: "", lectureDate: "", attendeeCount: "", reportText: "" });
   const [saving, setSaving] = useState(false);
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "leader")) router.replace("/login");
@@ -70,6 +71,25 @@ export default function LeaderDashboard() {
       });
     }
   }, [user]);
+
+  async function refreshMatches() {
+    const updated = await fetch("/api/match-requests").then((r) => r.json());
+    setMatches(updated);
+  }
+
+  async function acceptMatch(matchId: string) {
+    setActionInProgress(matchId);
+    const res = await fetch(`/api/match-requests/${matchId}/accept`, { method: "PATCH" });
+    if (res.ok) await refreshMatches();
+    setActionInProgress(null);
+  }
+
+  async function rejectMatch(matchId: string) {
+    setActionInProgress(matchId);
+    const res = await fetch(`/api/match-requests/${matchId}/reject`, { method: "POST" });
+    if (res.ok) await refreshMatches();
+    setActionInProgress(null);
+  }
 
   async function saveProfile() {
     setSaving(true);
@@ -121,6 +141,7 @@ export default function LeaderDashboard() {
     ? (ratedReports.reduce((s, r) => s + (r.rating_from_client ?? 0), 0) / ratedReports.length).toFixed(1)
     : "-";
 
+  const pendingMatches = matches.filter((m) => m.status === "matched");
   const activeMatches = matches.filter((m) => ["matched", "ongoing"].includes(m.status));
   const submittedMatchIds = new Set(reports.map((r) => r.match_id));
   const eligibleMatches = activeMatches.filter((m) => !submittedMatchIds.has(m.id));
@@ -186,6 +207,52 @@ export default function LeaderDashboard() {
             ))}
           </div>
         </div>
+
+        {/* 배정 수락 대기 배너 */}
+        {pendingMatches.length > 0 && (
+          <div className="bg-amber-50 border-2 border-amber-300 rounded-3xl p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🔔</span>
+              <div>
+                <p className="font-bold text-amber-900">새 강의 배정 요청 {pendingMatches.length}건</p>
+                <p className="text-xs text-amber-700 mt-0.5">수락 또는 거절을 선택해 주세요.</p>
+              </div>
+            </div>
+            {pendingMatches.map((m) => (
+              <div key={m.id} className="bg-white rounded-2xl p-4 shadow-sm border border-amber-100">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <div>
+                    <p className="font-semibold text-hwaseong-text">{m.title}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{m.client?.name}</p>
+                  </div>
+                  <StatusBadge status={m.status} />
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-3">
+                  <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {m.category}</span>
+                  {m.address && <span className="bg-gray-50 px-2 py-1 rounded-lg">📍 {m.address}</span>}
+                  <span className="bg-gray-50 px-2 py-1 rounded-lg">📅 {m.start_date}</span>
+                  <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {m.participant_count}명{m.target_age ? ` (${m.target_age})` : ""}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => acceptMatch(m.id)}
+                    disabled={actionInProgress === m.id}
+                    className="flex-1 py-2.5 bg-hwaseong-blue text-white text-sm font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-50"
+                  >
+                    {actionInProgress === m.id ? "처리 중..." : "✅ 수락"}
+                  </button>
+                  <button
+                    onClick={() => rejectMatch(m.id)}
+                    disabled={actionInProgress === m.id}
+                    className="flex-1 py-2.5 bg-white border-2 border-red-300 text-red-500 text-sm font-bold rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    {actionInProgress === m.id ? "처리 중..." : "✕ 거절"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 탭 */}
         <div className="flex gap-1 bg-gray-100 rounded-2xl p-1">
@@ -264,8 +331,26 @@ export default function LeaderDashboard() {
                   <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {m.participant_count}명{m.target_age ? ` (${m.target_age})` : ""}</span>
                   <span className="bg-gray-50 px-2 py-1 rounded-lg">📅 {m.start_date}</span>
                 </div>
-                {["matched", "ongoing"].includes(m.status) && (
-                  <p className="text-xs text-green-600 bg-green-50 py-2 px-3 rounded-xl mt-3">✅ 배정 확정 · 수요처 연락처가 공개되었습니다</p>
+                {m.status === "matched" && (
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => acceptMatch(m.id)}
+                      disabled={actionInProgress === m.id}
+                      className="flex-1 py-2 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-50"
+                    >
+                      {actionInProgress === m.id ? "처리 중..." : "✅ 수락"}
+                    </button>
+                    <button
+                      onClick={() => rejectMatch(m.id)}
+                      disabled={actionInProgress === m.id}
+                      className="flex-1 py-2 bg-white border-2 border-red-300 text-red-500 text-xs font-bold rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+                    >
+                      {actionInProgress === m.id ? "처리 중..." : "✕ 거절"}
+                    </button>
+                  </div>
+                )}
+                {m.status === "ongoing" && (
+                  <p className="text-xs text-green-600 bg-green-50 py-2 px-3 rounded-xl mt-3">✅ 진행 중 · 수요처 연락처가 공개되었습니다</p>
                 )}
               </div>
             ))}

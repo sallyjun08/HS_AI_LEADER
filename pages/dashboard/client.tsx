@@ -29,12 +29,43 @@ type MatchRequest = {
   leader: Leader | null;
 };
 
-const STATUS_MAP: Record<string, { label: string; cls: string; desc: string }> = {
-  pending:   { label: "접수됨",    cls: "bg-amber-100 text-amber-700", desc: "관리자가 매칭 중입니다." },
-  matched:   { label: "매칭 확정", cls: "bg-blue-100 text-blue-700",   desc: "강사가 배정되었습니다. 연락처가 공개됩니다." },
-  ongoing:   { label: "진행 중",   cls: "bg-green-100 text-green-700", desc: "강의가 진행 중입니다." },
-  completed: { label: "강의 완료", cls: "bg-gray-100 text-gray-600",   desc: "후기를 작성해 주세요." },
-  cancelled: { label: "취소됨",    cls: "bg-red-50 text-red-500",      desc: "" },
+const STATUS_MAP: Record<string, { label: string; cls: string; icon: string; desc: string }> = {
+  pending:   {
+    label: "강사 매칭 중",
+    cls:   "bg-amber-100 text-amber-800 ring-1 ring-amber-300",
+    icon:  "🔍",
+    desc:  "최적의 강사를 찾고 있습니다. 잠시만 기다려 주세요.",
+  },
+  matched:   {
+    label: "강사 수락 대기 중",
+    cls:   "bg-sky-100 text-sky-800 ring-1 ring-sky-300",
+    icon:  "⏳",
+    desc:  "배정된 강사가 일정을 검토 중입니다.",
+  },
+  ongoing:   {
+    label: "강의 진행 확정",
+    cls:   "bg-green-100 text-green-800 ring-1 ring-green-300",
+    icon:  "✅",
+    desc:  "강의 일정이 확정되었습니다. 강사 연락처가 공개됩니다.",
+  },
+  rejected:  {
+    label: "강사 재매칭 중",
+    cls:   "bg-indigo-100 text-indigo-800 ring-1 ring-indigo-300",
+    icon:  "🔄",
+    desc:  "더 적합한 강사를 찾고 있습니다. 곧 연락드리겠습니다.",
+  },
+  completed: {
+    label: "강의 완료",
+    cls:   "bg-gray-100 text-gray-600 ring-1 ring-gray-200",
+    icon:  "🎓",
+    desc:  "강의가 완료되었습니다. 만족도 평점을 남겨 주세요.",
+  },
+  cancelled: {
+    label: "취소됨",
+    cls:   "bg-red-50 text-red-500 ring-1 ring-red-200",
+    icon:  "✕",
+    desc:  "",
+  },
 };
 
 type ReviewState = { reportId: string; rating: number };
@@ -167,7 +198,7 @@ export default function ClientDashboard() {
               </div>
             )}
             {requests.map((req) => {
-              const st = STATUS_MAP[req.status] ?? { label: req.status, cls: "bg-gray-100 text-gray-500", desc: "" };
+              const st = STATUS_MAP[req.status] ?? { label: req.status, cls: "bg-gray-100 text-gray-500", icon: "", desc: "" };
               const isRevealed = ["matched", "ongoing", "completed"].includes(req.status);
               const l = req.leader;
               return (
@@ -177,7 +208,10 @@ export default function ClientDashboard() {
                       <p className="font-semibold text-hwaseong-text">{req.title}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{req.address} · {req.start_date}</p>
                     </div>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${st.cls}`}>{st.label}</span>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 inline-flex items-center gap-1 ${st.cls}`}>
+                      {st.icon && <span className="text-[11px]">{st.icon}</span>}
+                      {st.label}
+                    </span>
                   </div>
 
                   <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-4">

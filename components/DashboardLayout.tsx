@@ -18,9 +18,9 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   ],
   admin: [
     { icon: "📊", label: "통계",        href: "/dashboard/admin#stats" },
-    { icon: "🏅", label: "강사 관리",   href: "/dashboard/admin#leaders" },
+    { icon: "🏅", label: "강사 관리",   href: "/admin/leaders" },
     { icon: "📋", label: "요청 목록",   href: "/dashboard/admin#requests" },
-    { icon: "🔗", label: "스마트 매칭", href: "/dashboard/admin#matching" },
+    { icon: "🔗", label: "매칭 관리",   href: "/dashboard/admin#matching" },
     { icon: "📄", label: "활동 보고",   href: "/dashboard/admin#reports" },
   ],
 };
@@ -126,17 +126,29 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
           </div>
 
           <nav className="flex-1 py-3 overflow-y-auto">
-            {navItems.map((item) => (
-              <a
-                key={item.label}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-600 hover:text-hwaseong-blue hover:bg-hwaseong-light rounded-lg mx-2 transition-colors"
-              >
-                <span className="text-base w-5 text-center">{item.icon}</span>
-                <span className="font-medium">{item.label}</span>
-              </a>
-            ))}
+            {navItems.map((item) => {
+              const hrefPath = item.href.split("#")[0];
+              // 해시가 있는 항목은 asPath 전체로 비교, 없는 항목은 pathname으로 비교
+              const isActive = item.href.includes("#")
+                ? router.asPath === item.href
+                : router.pathname === hrefPath;
+              return (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg mx-2 transition-colors ${
+                    isActive
+                      ? "bg-hwaseong-blue/10 text-hwaseong-blue font-semibold"
+                      : "text-gray-600 hover:text-hwaseong-blue hover:bg-hwaseong-light font-medium"
+                  }`}
+                >
+                  <span className="text-base w-5 text-center">{item.icon}</span>
+                  <span>{item.label}</span>
+                  {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-hwaseong-blue" />}
+                </Link>
+              );
+            })}
           </nav>
 
           <div className="p-3 border-t border-gray-100 space-y-1">

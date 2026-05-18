@@ -66,21 +66,51 @@ export default function AdminDashboard() {
   const [matching, setMatching] = useState(false);
   const [matchSuccess, setMatchSuccess] = useState(false);
 
+  const [matchModal, setMatchModal] = useState(false);
+  const [selectedReqForAssign, setSelectedReqForAssign] = useState<MatchRequest | null>(null);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [assignedReqId, setAssignedReqId] = useState<string | null>(null);
+  const [liveTab, setLiveTab] = useState<"pending" | "matched" | "rejected">("pending");
+  const [refreshing, setRefreshing] = useState(false);
+  const [leaderSearch, setLeaderSearch] = useState("");
+  const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
   }, [loading, user, router]);
 
-  useEffect(() => {
-    if (!user) return;
-    Promise.all([
+  async function fetchAll() {
+    const [s, l, rq, rp] = await Promise.all([
       fetch("/api/admin/stats").then((r) => r.json()),
       fetch("/api/leaders").then((r) => r.json()),
       fetch("/api/match-requests").then((r) => r.json()),
       fetch("/api/activity-reports").then((r) => r.json()),
-    ]).then(([s, l, rq, rp]) => {
-      setStats(s); setLeaders(l); setRequests(rq); setReports(rp);
-    });
+    ]);
+    setStats(s); setLeaders(l); setRequests(rq); setReports(rp);
+  }
+
+  useEffect(() => {
+    if (user) fetchAll();
   }, [user]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await fetchAll();
+    setRefreshing(false);
+  }
+
+  // 토스트 자동 소멸
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // 모달 열릴 때 검색·선택 초기화
+  useEffect(() => {
+    if (matchModal) { setLeaderSearch(""); setSelectedLeaderId(null); }
+  }, [matchModal]);
 
   async function handleVerify(id: string, isVerified: boolean, certLevel?: number) {
     await fetch(`/api/admin/leaders/${id}/verify`, {
@@ -111,6 +141,28 @@ export default function AdminDashboard() {
     setScoredLeaders(scored);
   }
 
+  async function doSimpleAssign(req: MatchRequest, leaderId: string) {
+    setAssigningId(leaderId);
+    const res = await fetch(`/api/admin/match-requests/${req.id}/assign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leaderId }),
+    });
+    if (res.ok) {
+      setAssignedReqId(req.id);
+      setMatchModal(false);
+      setSelectedLeaderId(null);
+      setLeaderSearch("");
+      setLiveTab("matched");
+      setToast({ msg: "강사 배정이 완료됐습니다. 강사의 수락을 기다립니다.", ok: true });
+      const updated = await fetch("/api/match-requests").then((r) => r.json());
+      setRequests(updated);
+    } else {
+      setToast({ msg: "배정 중 오류가 발생했습니다. 다시 시도해 주세요.", ok: false });
+    }
+    setAssigningId(null);
+  }
+
   async function doMatch(leaderId: string) {
     if (!selectedReq) return;
     setMatching(true);
@@ -139,7 +191,19 @@ export default function AdminDashboard() {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  const pendingRequests = requests.filter((r) => r.status === "pending");
+  const filteredModalLeaders = leaders
+    .filter((l) => l.isVerified && l.isActive)
+    .filter((l) => {
+      if (!leaderSearch.trim()) return true;
+      const q = leaderSearch.toLowerCase();
+      return (l.realName ?? l.maskedName).toLowerCase().includes(q) ||
+             l.specialties.some((s) => s.toLowerCase().includes(q));
+    });
+
+  const pendingRequests  = requests.filter((r) => r.status === "pending");
+  const matchedRequests  = requests.filter((r) => r.status === "matched");
+  const rejectedRequests = requests.filter((r) => r.status === "rejected");
+  const liveFiltered = { pending: pendingRequests, matched: matchedRequests, rejected: rejectedRequests }[liveTab];
 
   return (
     <>
@@ -159,6 +223,11 @@ export default function AdminDashboard() {
                 매칭 대기 {pendingRequests.length}건
               </span>
             )}
+            {rejectedRequests.length > 0 && (
+              <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+                거절 {rejectedRequests.length}건
+              </span>
+            )}
             <button onClick={signOut} className="text-xs bg-white/10 border border-white/30 text-white px-4 py-2 rounded-xl hover:bg-white/20 transition-colors">로그아웃</button>
           </div>
         </div>
@@ -173,7 +242,7 @@ export default function AdminDashboard() {
                 tab === t ? "bg-white text-hwaseong-blue shadow-sm" : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              {t === "stats" ? "📊 통계" : t === "leaders" ? "🏅 강사 관리" : t === "requests" ? "📋 요청 목록" : t === "matching" ? "🔗 스마트 매칭" : "📄 활동 보고"}
+              {t === "stats" ? "📊 통계" : t === "leaders" ? "🏅 강사 관리" : t === "requests" ? "📋 요청 목록" : t === "matching" ? "🔗 매칭 관리" : "📄 활동 보고"}
             </button>
           ))}
         </div>
@@ -181,6 +250,95 @@ export default function AdminDashboard() {
         {/* 통계 탭 */}
         {tab === "stats" && stats && (
           <>
+            {/* ── 실시간 교육 매칭 현황 ── */}
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+
+              {/* 섹션 헤더 */}
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                  </span>
+                  <h3 className="font-bold text-hwaseong-text">실시간 교육 매칭 현황</h3>
+                </div>
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="text-xs text-gray-400 hover:text-hwaseong-blue disabled:opacity-50 flex items-center gap-1 transition-colors"
+                >
+                  <span className={refreshing ? "animate-spin" : ""}>↺</span>
+                  새로고침
+                </button>
+              </div>
+
+              {/* 집계 카드 3개 — 클릭 시 해당 탭 필터 */}
+              <div className="grid grid-cols-3 divide-x divide-gray-100">
+                {([
+                  { key: "pending",  label: "신규 요청",    count: pendingRequests.length,  icon: "📥", base: "bg-amber-50",  text: "text-amber-700",  urgent: pendingRequests.length > 0 },
+                  { key: "matched",  label: "수락 대기",    count: matchedRequests.length,  icon: "⏳", base: "bg-sky-50",    text: "text-sky-700",    urgent: false },
+                  { key: "rejected", label: "재배정 필요",  count: rejectedRequests.length, icon: "⚠️", base: "bg-red-50",    text: "text-red-700",    urgent: rejectedRequests.length > 0 },
+                ] as const).map((s) => (
+                  <button
+                    key={s.key}
+                    onClick={() => setLiveTab(s.key)}
+                    className={`py-4 px-3 text-center transition-all ${s.base} ${liveTab === s.key ? "ring-2 ring-inset ring-hwaseong-blue/30" : "hover:brightness-95"}`}
+                  >
+                    <p className="text-2xl mb-1">{s.icon}</p>
+                    <p className={`text-3xl font-black ${s.text} leading-none`}>{s.count}</p>
+                    <p className={`text-xs font-semibold mt-1 ${s.text}`}>{s.label}</p>
+                    {s.urgent && s.count > 0 && (
+                      <p className="text-[10px] text-red-500 font-bold mt-0.5 animate-pulse">처리 필요</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* 필터 탭 */}
+              <div className="flex gap-1 px-3 py-2 bg-gray-50 border-y border-gray-100">
+                {([
+                  { key: "pending",  label: "대기",   count: pendingRequests.length },
+                  { key: "matched",  label: "배정중", count: matchedRequests.length },
+                  { key: "rejected", label: "거절됨", count: rejectedRequests.length },
+                ] as const).map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={() => setLiveTab(t.key)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
+                      liveTab === t.key ? "bg-white text-hwaseong-blue shadow-sm" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    {t.label}
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${liveTab === t.key ? "bg-hwaseong-blue text-white" : "bg-gray-200 text-gray-500"}`}>
+                      {t.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* 요청 리스트 */}
+              <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
+                {liveFiltered.length === 0 ? (
+                  <div className="py-10 text-center text-gray-400">
+                    <p className="text-3xl mb-2">{liveTab === "pending" ? "🎉" : liveTab === "matched" ? "⏳" : "✅"}</p>
+                    <p className="text-sm">
+                      {liveTab === "pending" ? "대기 중인 요청이 없습니다." : liveTab === "matched" ? "수락 대기 중인 배정이 없습니다." : "거절된 요청이 없습니다."}
+                    </p>
+                  </div>
+                ) : (
+                  liveFiltered.map((req) => (
+                    <LiveMatchRow
+                      key={req.id}
+                      req={req}
+                      assignedReqId={assignedReqId}
+                      onAssign={() => { setSelectedReqForAssign(req); setMatchModal(true); setAssignedReqId(null); }}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* ── 전체 통계 요약 ── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { label: "전체 강사", value: stats.leaders.total, sub: `인증 ${stats.leaders.verified}명`, icon: "👥", color: "bg-hwaseong-blue" },
@@ -307,97 +465,54 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* 스마트 매칭 탭 */}
+        {/* 매칭 관리 탭 */}
         {tab === "matching" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="space-y-3">
-              <h3 className="font-bold text-hwaseong-text">매칭 대기 요청</h3>
-              {pendingRequests.length === 0 && (
-                <div className="bg-white rounded-2xl p-8 text-center border border-gray-100 text-gray-400">
-                  <p className="text-3xl mb-3">🎉</p>
-                  <p className="text-sm">모든 요청이 처리되었습니다.</p>
-                </div>
-              )}
-              {pendingRequests.map((req) => (
-                <button
-                  key={req.id}
-                  onClick={() => selectRequestForMatching(req)}
-                  className={`w-full text-left bg-white rounded-2xl p-4 shadow-sm border-2 transition-all ${
-                    selectedReq?.id === req.id ? "border-hwaseong-blue" : "border-gray-100 hover:border-gray-200"
-                  }`}
-                >
-                  <p className="font-semibold text-hwaseong-text text-sm">{req.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{req.client?.name} · {req.address}</p>
-                  <div className="flex gap-2 mt-2 text-xs text-gray-400">
-                    <span>🎯 {req.category}</span>
-                    <span>📅 {req.start_date}</span>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-hwaseong-text">매칭 대기 요청 ({pendingRequests.length}건)</h3>
+            </div>
+
+            {pendingRequests.length === 0 && (
+              <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 text-gray-400">
+                <p className="text-4xl mb-3">🎉</p>
+                <p className="text-sm font-medium">대기 중인 매칭 요청이 없습니다.</p>
+              </div>
+            )}
+
+            {pendingRequests.map((req) => (
+              <MatchRequestCard
+                key={req.id}
+                req={req}
+                assignedReqId={assignedReqId}
+                onAssign={() => { setSelectedReqForAssign(req); setMatchModal(true); setAssignedReqId(null); }}
+              />
+            ))}
+
+            {/* 거절된 요청 섹션 */}
+            {rejectedRequests.length > 0 && (
+              <>
+                <div className="flex items-center gap-3 pt-2">
+                  <div className="flex-1 h-px bg-orange-200" />
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className="text-base">⚠️</span>
+                    <h3 className="font-bold text-orange-700 text-sm">
+                      거절된 요청 — 재배정 필요 ({rejectedRequests.length}건)
+                    </h3>
                   </div>
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-3">
-              <h3 className="font-bold text-hwaseong-text">
-                {selectedReq ? "AI 추천 강사" : "요청을 선택하면 AI가 강사를 추천합니다"}
-              </h3>
-
-              {matchSuccess && (
-                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 text-green-700 text-sm font-semibold text-center">
-                  ✅ 매칭이 완료되었습니다. 강사에게 매칭이 통보됩니다.
+                  <div className="flex-1 h-px bg-orange-200" />
                 </div>
-              )}
-
-              {selectedReq && !matchSuccess && (
-                <>
-                  {scoredLeaders.length === 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-amber-700 text-sm">
-                      인증된 강사가 없습니다. 먼저 강사 인증을 진행해 주세요.
-                    </div>
-                  )}
-
-                  {scoredLeaders.map((leader, idx) => (
-                    <div key={leader.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                      <div className="flex items-start gap-3 mb-3">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm font-bold text-white flex-shrink-0 ${
-                          idx === 0 ? "bg-amber-500" : idx === 1 ? "bg-gray-400" : "bg-orange-400"
-                        }`}>
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="font-semibold text-hwaseong-text text-sm">{leader.realName ?? leader.maskedName}</p>
-                            {leader.isVerified && <span className="text-xs text-green-600">✓ 인증</span>}
-                          </div>
-                          <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
-                            <span>⭐ {leader.ratingAvg.toFixed(1)}</span>
-                            <span>강의 {leader.totalLectures}회</span>
-                            <span>{CERT_LABELS[leader.certLevel]}</span>
-                          </div>
-                          {leader.specialties.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5">
-                              {leader.specialties.slice(0, 3).map((s) => (
-                                <span key={s} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{s}</span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-lg font-black text-hwaseong-blue">{leader.matchScore}점</p>
-                          <p className="text-[10px] text-gray-400">매칭 점수</p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => doMatch(leader.id)}
-                        disabled={matching}
-                        className="w-full py-2.5 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-60"
-                      >
-                        {matching ? "매칭 중..." : "이 강사로 매칭하기"}
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
+                <p className="text-xs text-gray-400 text-center -mt-1">강사가 거절한 요청입니다. 다른 강사를 배정해 주세요.</p>
+                {rejectedRequests.map((req) => (
+                  <MatchRequestCard
+                    key={req.id}
+                    req={req}
+                    assignedReqId={assignedReqId}
+                    onAssign={() => { setSelectedReqForAssign(req); setMatchModal(true); setAssignedReqId(null); }}
+                    rejected
+                  />
+                ))}
+              </>
+            )}
           </div>
         )}
 
@@ -427,7 +542,233 @@ export default function AdminDashboard() {
         )}
 
       </DashboardLayout>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white text-sm font-semibold transition-all animate-fade-up ${
+          toast.ok ? "bg-green-600" : "bg-red-500"
+        }`}>
+          <span>{toast.ok ? "✅" : "❌"}</span>
+          <span>{toast.msg}</span>
+          <button onClick={() => setToast(null)} className="ml-2 opacity-70 hover:opacity-100">✕</button>
+        </div>
+      )}
+
+      {/* 강사 배정 워크플로우 모달 */}
+      {matchModal && selectedReqForAssign && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) setMatchModal(false); }}
+        >
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+
+            {/* 헤더 — 요청 정보 */}
+            <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-hwaseong-blue mb-1">강사 배정 워크플로우</p>
+                <h3 className="font-bold text-hwaseong-text line-clamp-1">{selectedReqForAssign.title}</h3>
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {selectedReqForAssign.address && (
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">📍 {selectedReqForAssign.address}</span>
+                  )}
+                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">🎯 {selectedReqForAssign.category}</span>
+                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">👥 {selectedReqForAssign.participant_count}명</span>
+                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">📅 {selectedReqForAssign.start_date}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setMatchModal(false)}
+                className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400"
+              >✕</button>
+            </div>
+
+            {/* 검색창 */}
+            <div className="px-4 pt-4 pb-2">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+                <input
+                  type="text"
+                  value={leaderSearch}
+                  onChange={(e) => setLeaderSearch(e.target.value)}
+                  placeholder="이름 또는 전문 분야 검색"
+                  className="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
+                />
+                {leaderSearch && (
+                  <button onClick={() => setLeaderSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">✕</button>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mt-1.5 px-1">
+                인증 완료·활동 중인 강사 {filteredModalLeaders.length}명
+              </p>
+            </div>
+
+            {/* 강사 리스트 */}
+            <div className="overflow-y-auto flex-1 px-4 pb-2 space-y-2">
+              {filteredModalLeaders.length === 0 ? (
+                <div className="text-center text-gray-400 py-10 text-sm">
+                  <p className="text-3xl mb-2">🏅</p>
+                  {leaderSearch ? "검색 결과가 없습니다." : "배정 가능한 강사가 없습니다."}
+                </div>
+              ) : (
+                filteredModalLeaders.map((leader) => {
+                  const isSelected = selectedLeaderId === leader.id;
+                  return (
+                    <button
+                      key={leader.id}
+                      onClick={() => setSelectedLeaderId(isSelected ? null : leader.id)}
+                      className={`w-full text-left flex items-center gap-3 rounded-2xl p-4 border-2 transition-all ${
+                        isSelected
+                          ? "border-hwaseong-blue bg-blue-50 shadow-sm"
+                          : "border-transparent bg-gray-50 hover:border-gray-200 hover:bg-gray-100"
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold flex-shrink-0 transition-colors ${
+                        isSelected ? "bg-hwaseong-blue text-white" : "bg-hwaseong-blue/10 text-hwaseong-blue"
+                      }`}>
+                        {isSelected ? "✓" : (leader.realName ?? leader.maskedName)[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-hwaseong-text text-sm">{leader.realName ?? leader.maskedName}</p>
+                        <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
+                          <span>{CERT_LABELS[leader.certLevel]}</span>
+                          <span>⭐ {leader.ratingAvg.toFixed(1)}</span>
+                          <span>강의 {leader.totalLectures}회</span>
+                        </div>
+                        {leader.specialties.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {leader.specialties.slice(0, 3).map((s) => (
+                              <span key={s} className={`text-[10px] px-1.5 py-0.5 rounded ${isSelected ? "bg-blue-200 text-blue-800" : "bg-blue-100 text-blue-700"}`}>{s}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {isSelected && <span className="flex-shrink-0 text-xs font-bold text-hwaseong-blue">선택됨</span>}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* 하단 — 선택 요약 + 최종 배정 버튼 */}
+            <div className="p-4 border-t border-gray-100 space-y-2">
+              {selectedLeaderId && (() => {
+                const picked = filteredModalLeaders.find((l) => l.id === selectedLeaderId);
+                return picked ? (
+                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+                    <span className="text-sm">✅</span>
+                    <p className="text-xs text-blue-800 font-semibold flex-1">
+                      {picked.realName ?? picked.maskedName} · {CERT_LABELS[picked.certLevel]}
+                    </p>
+                    <button onClick={() => setSelectedLeaderId(null)} className="text-blue-400 hover:text-blue-600 text-xs">변경</button>
+                  </div>
+                ) : null;
+              })()}
+              <button
+                onClick={() => selectedLeaderId && doSimpleAssign(selectedReqForAssign, selectedLeaderId)}
+                disabled={!selectedLeaderId || assigningId !== null}
+                className="w-full py-3 bg-hwaseong-blue text-white text-sm font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {assigningId ? "배정 중..." : selectedLeaderId ? "최종 배정" : "강사를 선택해 주세요"}
+              </button>
+              <button
+                onClick={() => setMatchModal(false)}
+                className="w-full py-2 text-sm text-gray-400 rounded-xl hover:bg-gray-100 transition-colors"
+              >취소</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
+  );
+}
+
+function LiveMatchRow({
+  req,
+  assignedReqId,
+  onAssign,
+}: {
+  req: MatchRequest;
+  assignedReqId: string | null;
+  onAssign: () => void;
+}) {
+  const isRejected = req.status === "rejected";
+  const isMatched  = req.status === "matched";
+  return (
+    <div className={`flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors ${isRejected ? "border-l-4 border-red-400 bg-red-50/30" : ""}`}>
+      <StatusBadge status={req.status} />
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-hwaseong-text text-sm truncate">{req.title}</p>
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-gray-500">
+          {req.client?.name && <span>🏢 {req.client.name}</span>}
+          {req.address && <span>📍 {req.address}</span>}
+          <span>📅 {req.start_date}</span>
+        </div>
+        {assignedReqId === req.id && (
+          <p className="text-[10px] text-green-600 font-semibold mt-0.5">✅ 배정 완료</p>
+        )}
+      </div>
+      {(req.status === "pending" || req.status === "rejected") && (
+        <button
+          onClick={onAssign}
+          className={`flex-shrink-0 px-3 py-1.5 text-xs font-bold text-white rounded-lg transition-colors ${
+            isRejected ? "bg-orange-500 hover:bg-orange-600" : "bg-hwaseong-blue hover:bg-blue-900"
+          }`}
+        >
+          {isRejected ? "재배정" : "배정"}
+        </button>
+      )}
+      {isMatched && (
+        <div className="flex-shrink-0 text-right">
+          <p className="text-[10px] text-sky-600 font-semibold">⏳ 수락 대기</p>
+          {req.leader && (
+            <p className="text-[10px] text-gray-400 mt-0.5">{req.leader.realName ?? req.leader.maskedName}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MatchRequestCard({
+  req,
+  assignedReqId,
+  onAssign,
+  rejected = false,
+}: {
+  req: MatchRequest;
+  assignedReqId: string | null;
+  onAssign: () => void;
+  rejected?: boolean;
+}) {
+  return (
+    <div className={`rounded-2xl p-5 shadow-sm border ${rejected ? "bg-orange-50 border-orange-200" : "bg-white border-gray-100"}`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="font-semibold text-hwaseong-text">{req.title}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{req.client?.name}</p>
+        </div>
+        <StatusBadge status={req.status} />
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-3">
+        <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {req.category}</span>
+        {req.address && <span className="bg-gray-50 px-2 py-1 rounded-lg">📍 {req.address}</span>}
+        <span className="bg-gray-50 px-2 py-1 rounded-lg">📅 {req.start_date}</span>
+        <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {req.participant_count}명</span>
+      </div>
+      {assignedReqId === req.id && (
+        <p className="text-xs text-green-600 font-semibold mb-2">✅ 강사 배정이 완료되었습니다.</p>
+      )}
+      <button
+        onClick={onAssign}
+        className={`w-full py-2.5 text-white text-sm font-bold rounded-xl transition-colors ${
+          rejected
+            ? "bg-orange-500 hover:bg-orange-600"
+            : "bg-hwaseong-blue hover:bg-blue-900"
+        }`}
+      >
+        {rejected ? "다른 강사 재배정하기" : "강사 배정하기"}
+      </button>
+    </div>
   );
 }
 

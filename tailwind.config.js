@@ -19,6 +19,15 @@ module.exports = {
       fontFamily: {
         sans: ["Noto Sans KR", "Arial", "sans-serif"],
       },
+      keyframes: {
+        "fade-up": {
+          "0%":   { opacity: "0", transform: "translate(-50%, 16px)" },
+          "100%": { opacity: "1", transform: "translate(-50%, 0)" },
+        },
+      },
+      animation: {
+        "fade-up": "fade-up 0.25s ease-out",
+      },
     },
   },
   plugins: [],

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // output: "export" removed — API Routes require server-side rendering
+  output: "export",
   allowedDevOrigins: [
     "*.cloudworkstations.dev",
     "*.idx.dev",

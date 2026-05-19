@@ -46,31 +46,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function fetchMe() {
     try {
       const res = await fetch("/api/auth/me");
-      if (!res.ok) { setUser(null); return; }
-      setUser(await res.json());
-    } catch {
+      if (!res.ok) { 
+        setUser(null); 
+        return; 
+      }
+      const data = await res.json();
+      setUser(data);
+    } catch (e) {
+      console.error("fetchMe error:", e);
       setUser(null);
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    fetchMe().finally(() => setLoading(false));
+    fetchMe();
   }, []);
 
   async function signIn(email: string, password: string) {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      return { error: data.error ?? "로그인에 실패했습니다." };
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        return { error: data.error ?? "로그인에 실패했습니다." };
+      }
+      
+      // 갱신 및 리다이렉트
+      await fetchMe();
+      return { error: null };
+    } catch (e) {
+      return { error: "로그인 중 서버 연결 오류가 발생했습니다." };
     }
-    await fetchMe();
-    const me = await fetch("/api/auth/me").then((r) => r.json()).catch(() => null);
-    if (me?.role) router.replace(ROLE_REDIRECTS[me.role as UserRole]);
-    return { error: null };
   }
 
   async function signOut() {

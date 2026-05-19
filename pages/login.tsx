@@ -63,33 +63,16 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
 
-    // 1. 로그인 시도
-    const loginRes = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    if (!loginRes.ok) {
-      const data = await loginRes.json();
-      setError(data.error ?? "로그인에 실패했습니다.");
+    const { error: loginError } = await signIn(email, password);
+    
+    if (loginError) {
+      setError(loginError);
       setSubmitting(false);
       return;
     }
 
-    // 2. 실제 역할 확인
-    const me = await fetch("/api/auth/me").then((r) => r.json()).catch(() => null);
-
-    // 3. 선택한 역할과 불일치 시 로그아웃 후 오류
-    if (me?.role !== selectedRole) {
-      await fetch("/api/auth/logout", { method: "POST" });
-      setError(`이 계정은 ${ROLE_NAMES[selectedRole!]} 계정이 아닙니다. 올바른 역할로 로그인해 주세요.`);
-      setSubmitting(false);
-      return;
-    }
-
-    // 4. 역할 일치 → 컨텍스트 갱신 후 리다이렉트
-    await refresh();
-    router.replace(ROLE_REDIRECTS[me.role as LoginRole]);
+    // AuthContext의 signIn 내부에서 fetchMe와 리다이렉트를 처리하므로 
+    // 여기서는 추가 작업이 필요 없습니다.
   }
 
   if (loading) {

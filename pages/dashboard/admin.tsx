@@ -1,9 +1,9 @@
 import Head from "next/head";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
 type Stats = {
   leaders: { total: number; verified: number };
@@ -36,9 +36,45 @@ type MatchRequest = {
   start_date: string;
   address: string | null;
   status: string;
+  is_approved?: boolean;
+  created_at?: string;
   client: { name: string } | null;
   leader: Leader | null;
 };
+
+type FeedLeader = {
+  id: string;
+  name: string;
+  email: string;
+  joinedAt: string;
+  isVerified: boolean;
+  certLevel: number;
+};
+
+type FeedItem = { id: string; type: "request" | "report" | "leader"; title: string; sub: string; time: string };
+
+// 화성시 권역별 교육 신청 분포 (더미 데이터)
+const ZONE_PIE_DATA = [
+  { name: "동부 (동탄)",    value: 38, color: "#0ea5e9" },
+  { name: "남부 (봉담·향남)", value: 24, color: "#22c55e" },
+  { name: "서부 (남양·팔탄)", value: 19, color: "#8b5cf6" },
+  { name: "북부 (병점·기산)", value: 14, color: "#f97316" },
+  { name: "기타 지역",       value:  5, color: "#94a3b8" },
+];
+const ZONE_TOTAL = ZONE_PIE_DATA.reduce((a, b) => a + b.value, 0);
+
+function formatRelative(iso: string): string {
+  if (!iso) return "";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1)  return "방금";
+  if (mins < 60) return `${mins}분 전`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days < 7)  return `${days}일 전`;
+  return new Date(iso).toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
+}
 
 type Report = {
   id: string;
@@ -50,44 +86,35 @@ type Report = {
   match: { title: string; address: string | null; start_date: string; leader: { profiles: { name: string } | null } | null } | null;
 };
 
-const CERT_LABELS: Record<number, string> = { 1: "Lv.1 기초", 2: "Lv.2 리더", 3: "Lv.3 전문" };
-
 export default function AdminDashboard() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState<"stats" | "leaders" | "requests" | "matching" | "reports">("stats");
   const [stats, setStats] = useState<Stats | null>(null);
-  const [leaders, setLeaders] = useState<Leader[]>([]);
   const [requests, setRequests] = useState<MatchRequest[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
-
-  const [selectedReq, setSelectedReq] = useState<MatchRequest | null>(null);
-  const [scoredLeaders, setScoredLeaders] = useState<(Leader & { matchScore?: number })[]>([]);
-  const [matching, setMatching] = useState(false);
-  const [matchSuccess, setMatchSuccess] = useState(false);
-
-  const [matchModal, setMatchModal] = useState(false);
-  const [selectedReqForAssign, setSelectedReqForAssign] = useState<MatchRequest | null>(null);
-  const [assigningId, setAssigningId] = useState<string | null>(null);
-  const [assignedReqId, setAssignedReqId] = useState<string | null>(null);
-  const [liveTab, setLiveTab] = useState<"pending" | "matched" | "rejected">("pending");
   const [refreshing, setRefreshing] = useState(false);
-  const [leaderSearch, setLeaderSearch] = useState("");
-  const [selectedLeaderId, setSelectedLeaderId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [feedLeaders, setFeedLeaders] = useState<FeedLeader[]>([]);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
   }, [loading, user, router]);
 
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/admin/leaders/list")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setFeedLeaders(data); })
+      .catch(() => {});
+  }, [user]);
+
   async function fetchAll() {
-    const [s, l, rq, rp] = await Promise.all([
+    const [s, rq, rp] = await Promise.all([
       fetch("/api/admin/stats").then((r) => r.json()),
-      fetch("/api/leaders").then((r) => r.json()),
       fetch("/api/match-requests").then((r) => r.json()),
       fetch("/api/activity-reports").then((r) => r.json()),
     ]);
-    setStats(s); setLeaders(l); setRequests(rq); setReports(rp);
+    setStats(s); setRequests(rq); setReports(rp);
   }
 
   useEffect(() => {
@@ -107,103 +134,36 @@ export default function AdminDashboard() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // 모달 열릴 때 검색·선택 초기화
-  useEffect(() => {
-    if (matchModal) { setLeaderSearch(""); setSelectedLeaderId(null); }
-  }, [matchModal]);
-
-  async function handleVerify(id: string, isVerified: boolean, certLevel?: number) {
-    await fetch(`/api/admin/leaders/${id}/verify`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isVerified, ...(certLevel !== undefined && { certLevel }) }),
-    });
-    const updated = await fetch("/api/leaders").then((r) => r.json());
-    setLeaders(updated);
-  }
-
-  function selectRequestForMatching(req: MatchRequest) {
-    setSelectedReq(req);
-    setMatchSuccess(false);
-    const scored = leaders
-      .filter((l) => l.isVerified && l.isActive)
-      .map((leader) => {
-        let score = 0;
-        if (leader.availableRegions.some((r) => req.address?.includes(r) || r.includes(req.address ?? ""))) score += 30;
-        const catWords = req.category.split(/[\s,]+/);
-        const matched = leader.specialties.filter((s) => catWords.some((w) => s.includes(w) || w.includes(s)));
-        score += Math.min(matched.length * 15, 40);
-        score += (leader.ratingAvg / 5) * 20;
-        score += Math.min(leader.totalLectures, 10);
-        return { ...leader, matchScore: Math.round(score) };
-      })
-      .sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
-    setScoredLeaders(scored);
-  }
-
-  async function doSimpleAssign(req: MatchRequest, leaderId: string) {
-    setAssigningId(leaderId);
-    const res = await fetch(`/api/admin/match-requests/${req.id}/assign`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leaderId }),
-    });
-    if (res.ok) {
-      setAssignedReqId(req.id);
-      setMatchModal(false);
-      setSelectedLeaderId(null);
-      setLeaderSearch("");
-      setLiveTab("matched");
-      setToast({ msg: "강사 배정이 완료됐습니다. 강사의 수락을 기다립니다.", ok: true });
-      const updated = await fetch("/api/match-requests").then((r) => r.json());
-      setRequests(updated);
-    } else {
-      setToast({ msg: "배정 중 오류가 발생했습니다. 다시 시도해 주세요.", ok: false });
-    }
-    setAssigningId(null);
-  }
-
-  async function doMatch(leaderId: string) {
-    if (!selectedReq) return;
-    setMatching(true);
-    const leader = scoredLeaders.find((l) => l.id === leaderId);
-    const res = await fetch(`/api/admin/match-requests/${selectedReq.id}/assign`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        leaderId,
-        matchScore:      leader?.matchScore ?? 0,
-        regionScore:     calcRegionScore(leader, selectedReq),
-        specialtyScore:  calcSpecialtyScore(leader, selectedReq),
-        ratingScore:     Math.round(((leader?.ratingAvg ?? 0) / 5) * 20),
-        experienceScore: Math.min(leader?.totalLectures ?? 0, 10),
-      }),
-    });
-    if (res.ok) {
-      setMatchSuccess(true);
-      const updated = await fetch("/api/match-requests").then((r) => r.json());
-      setRequests(updated);
-    }
-    setMatching(false);
-  }
+  const feedItems = useMemo((): FeedItem[] => {
+    const items: FeedItem[] = [];
+    [...requests]
+      .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())
+      .slice(0, 6)
+      .forEach((r) => items.push({ id: r.id, type: "request", title: r.title, sub: r.client?.name ?? "", time: r.created_at ?? "" }));
+    [...reports]
+      .sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())
+      .slice(0, 4)
+      .forEach((r) => items.push({ id: r.id, type: "report", title: r.match?.title ?? "활동 보고서", sub: r.match?.leader?.profiles?.name ?? "", time: r.submitted_at }));
+    [...feedLeaders]
+      .sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime())
+      .slice(0, 3)
+      .forEach((l) => items.push({ id: l.id, type: "leader", title: `${l.name} 강사 가입`, sub: l.isVerified ? "인증 완료" : "인증 대기", time: l.joinedAt }));
+    return items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 10);
+  }, [requests, reports, feedLeaders]);
 
   if (loading || !user) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  const filteredModalLeaders = leaders
-    .filter((l) => l.isVerified && l.isActive)
-    .filter((l) => {
-      if (!leaderSearch.trim()) return true;
-      const q = leaderSearch.toLowerCase();
-      return (l.realName ?? l.maskedName).toLowerCase().includes(q) ||
-             l.specialties.some((s) => s.toLowerCase().includes(q));
-    });
-
-  const pendingRequests  = requests.filter((r) => r.status === "pending");
+  // is_approved가 명시적으로 false인 항목은 검토 페이지에서 처리 중 → 여기서 제외
+  const pendingRequests  = requests.filter((r) => r.status === "pending" && r.is_approved !== false);
   const matchedRequests  = requests.filter((r) => r.status === "matched");
   const rejectedRequests = requests.filter((r) => r.status === "rejected");
-  const liveFiltered = { pending: pendingRequests, matched: matchedRequests, rejected: rejectedRequests }[liveTab];
+  const ongoingCount = requests.filter((r) => r.status === "ongoing").length;
+  const todayReports = reports.filter((r) => {
+    const today = new Date().toDateString();
+    return new Date(r.submitted_at).toDateString() === today;
+  }).length;
 
   return (
     <>
@@ -232,57 +192,312 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 탭 */}
-        <div className="flex gap-1 bg-gray-100 rounded-2xl p-1 overflow-x-auto">
-          {(["stats", "leaders", "requests", "matching", "reports"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-shrink-0 px-4 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                tab === t ? "bg-white text-hwaseong-blue shadow-sm" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {t === "stats" ? "📊 통계" : t === "leaders" ? "🏅 강사 관리" : t === "requests" ? "📋 요청 목록" : t === "matching" ? "🔗 매칭 관리" : "📄 활동 보고"}
-            </button>
-          ))}
-        </div>
-
-        {/* 통계 탭 */}
-        {tab === "stats" && stats && (
+        {/* 통계 */}
+        {stats && (
           <>
-            {/* ── 실시간 교육 매칭 현황 ── */}
-            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+            {/* ── 상단 요약 카드 4개 ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
 
-              {/* 섹션 헤더 */}
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-                  </span>
-                  <h3 className="font-bold text-hwaseong-text">실시간 교육 매칭 현황</h3>
+              {/* 매칭 대기 중 */}
+              <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-lg">📥</div>
+                  {pendingRequests.length > 0
+                    ? <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg animate-pulse">처리 필요</span>
+                    : <span className="text-xs font-semibold text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">없음</span>
+                  }
                 </div>
-                <button
-                  onClick={handleRefresh}
-                  disabled={refreshing}
-                  className="text-xs text-gray-400 hover:text-hwaseong-blue disabled:opacity-50 flex items-center gap-1 transition-colors"
-                >
-                  <span className={refreshing ? "animate-spin" : ""}>↺</span>
-                  새로고침
-                </button>
+                <p className="text-3xl font-black text-hwaseong-text">{pendingRequests.length}</p>
+                <p className="text-sm font-semibold text-gray-600 mt-1">매칭 대기 중</p>
+                <p className="text-xs text-gray-400 mt-0.5">강사 배정이 필요한 요청</p>
               </div>
 
-              {/* 집계 카드 3개 — 클릭 시 해당 탭 필터 */}
+              {/* 진행 중인 강의 */}
+              <div className="bg-white rounded-2xl p-5 border border-green-100 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-lg">▶️</div>
+                  <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-1 rounded-lg">진행</span>
+                </div>
+                <p className="text-3xl font-black text-hwaseong-text">{ongoingCount}</p>
+                <p className="text-sm font-semibold text-gray-600 mt-1">진행 중인 강의</p>
+                <p className="text-xs text-gray-400 mt-0.5">현재 수업이 열린 건수</p>
+              </div>
+
+              {/* 오늘 제출된 보고서 */}
+              <div className="bg-white rounded-2xl p-5 border border-sky-100 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-10 h-10 bg-sky-100 rounded-xl flex items-center justify-center text-lg">📄</div>
+                  <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2 py-1 rounded-lg">오늘</span>
+                </div>
+                <p className="text-3xl font-black text-hwaseong-text">{todayReports}</p>
+                <p className="text-sm font-semibold text-gray-600 mt-1">오늘 제출된 보고서</p>
+                <p className="text-xs text-gray-400 mt-0.5">금일 활동 보고 건수</p>
+              </div>
+
+              {/* 재배정 필요 — 빨간색 경고 */}
+              <div className={`rounded-2xl p-5 border shadow-sm relative overflow-hidden ${
+                rejectedRequests.length > 0 ? "bg-red-50 border-red-200" : "bg-white border-gray-100"
+              }`}>
+                {rejectedRequests.length > 0 && (
+                  <div className="absolute inset-0 bg-red-400/5 animate-pulse pointer-events-none" />
+                )}
+                <div className="flex items-center justify-between mb-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
+                    rejectedRequests.length > 0 ? "bg-red-200" : "bg-gray-100"
+                  }`}>⚠️</div>
+                  {rejectedRequests.length > 0
+                    ? <span className="text-xs font-bold text-red-700 bg-red-100 px-2 py-1 rounded-lg animate-pulse">즉시 처리</span>
+                    : <span className="text-xs font-semibold text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">정상</span>
+                  }
+                </div>
+                <p className={`text-3xl font-black ${rejectedRequests.length > 0 ? "text-red-600" : "text-hwaseong-text"}`}>
+                  {rejectedRequests.length}
+                </p>
+                <p className={`text-sm font-semibold mt-1 ${rejectedRequests.length > 0 ? "text-red-700" : "text-gray-600"}`}>
+                  재배정 필요
+                </p>
+                <p className={`text-xs mt-0.5 ${rejectedRequests.length > 0 ? "text-red-500 font-semibold" : "text-gray-400"}`}>
+                  {rejectedRequests.length > 0 ? `강사 거절 → 재배정 필요` : "모든 매칭 정상"}
+                </p>
+              </div>
+            </div>
+
+            {/* ── 차트 영역 + 실시간 알림 피드 ── */}
+            <div className="grid lg:grid-cols-3 gap-6">
+
+              {/* 왼쪽: 차트 2개 (2/3 너비) */}
+              <div className="lg:col-span-2 space-y-6">
+
+                {/* 파이 차트 — 권역별 교육 신청 분포 */}
+                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-bold text-hwaseong-text">화성시 권역별 교육 신청 분포</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">누적 신청 기준 · 5개 생활권</p>
+                    </div>
+                    <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-1 rounded-lg font-semibold">
+                      샘플 데이터
+                    </span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-center gap-6">
+                    <div className="flex-shrink-0 w-full sm:w-56">
+                      <ResponsiveContainer width="100%" height={200}>
+                        <PieChart>
+                          <Pie
+                            data={ZONE_PIE_DATA}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={52}
+                            outerRadius={88}
+                            paddingAngle={3}
+                            dataKey="value"
+                            stroke="none"
+                          >
+                            {ZONE_PIE_DATA.map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(v) => [`${v ?? 0}건`, "신청 수"]}
+                            contentStyle={{ borderRadius: 12, fontSize: 12 }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="flex-1 w-full space-y-2">
+                      {ZONE_PIE_DATA.map((d) => {
+                        const pct = Math.round((d.value / ZONE_TOTAL) * 100);
+                        return (
+                          <div key={d.name}>
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: d.color }} />
+                                <span className="text-xs text-gray-600">{d.name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-bold text-hwaseong-text">{d.value}건</span>
+                                <span className="text-[10px] text-gray-400 w-8 text-right">{pct}%</span>
+                              </div>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: d.color }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 바 차트 — 월별 교육 진행 현황 */}
+                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="font-bold text-hwaseong-text">월별 교육 진행 현황</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">강의 완료(completed) 기준</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded bg-hwaseong-blue" />
+                      <span className="text-xs text-gray-500">강의 완료 수</span>
+                    </div>
+                  </div>
+                  {stats.monthlyStats.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={stats.monthlyStats} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: 12, fontSize: 12 }}
+                          formatter={(v) => [`${v ?? 0}건`, "강의 완료"]}
+                        />
+                        <Bar dataKey="count" name="강의 완료" fill="#003087" radius={[6, 6, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-48 flex flex-col items-center justify-center text-gray-300">
+                      <p className="text-4xl mb-2">📊</p>
+                      <p className="text-sm">완료된 강의 데이터가 없습니다.</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 요청 상태 요약 3칸 */}
+                <div className="grid grid-cols-3 gap-4">
+                  {[
+                    { label: "전체 요청",  value: stats.requests.total,     color: "text-hwaseong-blue", icon: "📋", bg: "bg-blue-50" },
+                    { label: "매칭 진행",  value: stats.requests.matched,    color: "text-sky-600",       icon: "🔗", bg: "bg-sky-50" },
+                    { label: "강의 완료",  value: stats.requests.completed,  color: "text-green-600",     icon: "🎓", bg: "bg-green-50" },
+                  ].map((s) => (
+                    <div key={s.label} className="bg-white rounded-2xl p-4 border border-gray-100 text-center">
+                      <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center text-base mx-auto mb-2`}>{s.icon}</div>
+                      <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
+                      <p className="text-xs text-gray-400 mt-1">{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 오른쪽: 실시간 피드 + 강사 현황 (1/3 너비) */}
+              <div className="space-y-4">
+
+                {/* 강사 현황 요약 */}
+                <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">강사 현황</h4>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">전체 강사</span>
+                      <span className="text-sm font-bold text-hwaseong-text">{stats.leaders.total}명</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">인증 완료</span>
+                      <span className="text-sm font-bold text-green-600">{stats.leaders.verified}명</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">인증 대기</span>
+                      <span className="text-sm font-bold text-amber-600">{stats.leaders.total - stats.leaders.verified}명</span>
+                    </div>
+                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-1">
+                      <div
+                        className="h-full bg-green-500 rounded-full transition-all duration-700"
+                        style={{ width: stats.leaders.total > 0 ? `${(stats.leaders.verified / stats.leaders.total) * 100}%` : "0%" }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-right">
+                      인증률 {stats.leaders.total > 0 ? Math.round((stats.leaders.verified / stats.leaders.total) * 100) : 0}%
+                    </p>
+                  </div>
+                </div>
+
+                {/* 수강생 현황 요약 */}
+                <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">수강생 현황</h4>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">누적 수강생</span>
+                      <span className="text-sm font-bold text-hwaseong-text">{stats.reports.totalAttendees}명</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">평균 만족도</span>
+                      <span className="text-sm font-bold text-amber-500">⭐ {stats.reports.avgSatisfaction} / 5</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">전체 보고서</span>
+                      <span className="text-sm font-bold text-sky-600">{stats.reports.total}건</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 실시간 활동 피드 */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                      </span>
+                      <h4 className="text-xs font-bold text-hwaseong-text">최근 활동 피드</h4>
+                    </div>
+                    <button onClick={handleRefresh} disabled={refreshing} className="text-[10px] text-gray-400 hover:text-hwaseong-blue disabled:opacity-40">
+                      {refreshing ? "..." : "↺ 새로고침"}
+                    </button>
+                  </div>
+                  <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
+                    {feedItems.length === 0 ? (
+                      <div className="py-8 text-center text-gray-300 text-sm">활동 내역이 없습니다.</div>
+                    ) : (
+                      feedItems.map((item) => (
+                        <div key={`${item.type}-${item.id}`} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0 mt-0.5 ${
+                            item.type === "request" ? "bg-blue-100" :
+                            item.type === "report"  ? "bg-green-100" :
+                            "bg-indigo-100"
+                          }`}>
+                            {item.type === "request" ? "📋" : item.type === "report" ? "📄" : "🏅"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-hwaseong-text truncate leading-tight">{item.title}</p>
+                            {item.sub && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.sub}</p>}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                              item.type === "request" ? "bg-blue-50 text-blue-600" :
+                              item.type === "report"  ? "bg-green-50 text-green-600" :
+                              "bg-indigo-50 text-indigo-600"
+                            }`}>
+                              {item.type === "request" ? "요청" : item.type === "report" ? "보고" : "가입"}
+                            </span>
+                            <p className="text-[10px] text-gray-300 mt-1">{formatRelative(item.time)}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 요청 현황 요약 + 바로가기 ── */}
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-bold text-hwaseong-text">요청 파이프라인 현황</h3>
+                <a
+                  href="/admin/requests"
+                  className="text-xs text-hwaseong-blue hover:underline font-semibold"
+                >
+                  전체 보기 →
+                </a>
+              </div>
               <div className="grid grid-cols-3 divide-x divide-gray-100">
-                {([
-                  { key: "pending",  label: "신규 요청",    count: pendingRequests.length,  icon: "📥", base: "bg-amber-50",  text: "text-amber-700",  urgent: pendingRequests.length > 0 },
-                  { key: "matched",  label: "수락 대기",    count: matchedRequests.length,  icon: "⏳", base: "bg-sky-50",    text: "text-sky-700",    urgent: false },
-                  { key: "rejected", label: "재배정 필요",  count: rejectedRequests.length, icon: "⚠️", base: "bg-red-50",    text: "text-red-700",    urgent: rejectedRequests.length > 0 },
-                ] as const).map((s) => (
-                  <button
-                    key={s.key}
-                    onClick={() => setLiveTab(s.key)}
-                    className={`py-4 px-3 text-center transition-all ${s.base} ${liveTab === s.key ? "ring-2 ring-inset ring-hwaseong-blue/30" : "hover:brightness-95"}`}
+                {[
+                  { label: "검토 대기",   count: pendingRequests.length,  icon: "📥", bg: "bg-amber-50",  text: "text-amber-700",  href: "/admin/review",           urgent: pendingRequests.length > 0 },
+                  { label: "수락 대기",   count: matchedRequests.length,  icon: "⏳", bg: "bg-sky-50",    text: "text-sky-700",    href: "/admin/requests",         urgent: false },
+                  { label: "재배정 필요", count: rejectedRequests.length, icon: "⚠️", bg: "bg-red-50",    text: "text-red-700",    href: "/admin/matching-center",  urgent: rejectedRequests.length > 0 },
+                ].map((s) => (
+                  <a
+                    key={s.label}
+                    href={s.href}
+                    className={`py-5 px-3 text-center block hover:brightness-95 transition-all ${s.bg}`}
                   >
                     <p className="text-2xl mb-1">{s.icon}</p>
                     <p className={`text-3xl font-black ${s.text} leading-none`}>{s.count}</p>
@@ -290,255 +505,11 @@ export default function AdminDashboard() {
                     {s.urgent && s.count > 0 && (
                       <p className="text-[10px] text-red-500 font-bold mt-0.5 animate-pulse">처리 필요</p>
                     )}
-                  </button>
+                  </a>
                 ))}
               </div>
-
-              {/* 필터 탭 */}
-              <div className="flex gap-1 px-3 py-2 bg-gray-50 border-y border-gray-100">
-                {([
-                  { key: "pending",  label: "대기",   count: pendingRequests.length },
-                  { key: "matched",  label: "배정중", count: matchedRequests.length },
-                  { key: "rejected", label: "거절됨", count: rejectedRequests.length },
-                ] as const).map((t) => (
-                  <button
-                    key={t.key}
-                    onClick={() => setLiveTab(t.key)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
-                      liveTab === t.key ? "bg-white text-hwaseong-blue shadow-sm" : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    {t.label}
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${liveTab === t.key ? "bg-hwaseong-blue text-white" : "bg-gray-200 text-gray-500"}`}>
-                      {t.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* 요청 리스트 */}
-              <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
-                {liveFiltered.length === 0 ? (
-                  <div className="py-10 text-center text-gray-400">
-                    <p className="text-3xl mb-2">{liveTab === "pending" ? "🎉" : liveTab === "matched" ? "⏳" : "✅"}</p>
-                    <p className="text-sm">
-                      {liveTab === "pending" ? "대기 중인 요청이 없습니다." : liveTab === "matched" ? "수락 대기 중인 배정이 없습니다." : "거절된 요청이 없습니다."}
-                    </p>
-                  </div>
-                ) : (
-                  liveFiltered.map((req) => (
-                    <LiveMatchRow
-                      key={req.id}
-                      req={req}
-                      assignedReqId={assignedReqId}
-                      onAssign={() => { setSelectedReqForAssign(req); setMatchModal(true); setAssignedReqId(null); }}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* ── 전체 통계 요약 ── */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {[
-                { label: "전체 강사", value: stats.leaders.total, sub: `인증 ${stats.leaders.verified}명`, icon: "👥", color: "bg-hwaseong-blue" },
-                { label: "매칭 대기", value: stats.requests.pending, sub: "처리 필요", icon: "⏳", color: "bg-amber-500" },
-                { label: "누적 수강생", value: stats.reports.totalAttendees, sub: "명", icon: "🎓", color: "bg-green-600" },
-                { label: "평균 만족도", value: `${stats.reports.avgSatisfaction}점`, sub: "5점 만점", icon: "⭐", color: "bg-sky-500" },
-              ].map((c) => (
-                <div key={c.label} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                  <div className={`w-9 h-9 ${c.color} rounded-xl flex items-center justify-center text-base mb-2`}>{c.icon}</div>
-                  <p className="text-2xl font-black text-hwaseong-text">{c.value}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{c.label} · {c.sub}</p>
-                </div>
-              ))}
-            </div>
-
-            {stats.monthlyStats.length > 0 && (
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <h3 className="font-bold text-hwaseong-text mb-4">월별 강의 완료 현황</h3>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={stats.monthlyStats} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip contentStyle={{ borderRadius: 12, fontSize: 12 }} />
-                    <Bar dataKey="count" name="강의 수" fill="#003087" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            <div className="grid grid-cols-3 gap-4">
-              {[
-                { label: "전체 요청", value: stats.requests.total, color: "text-hwaseong-blue" },
-                { label: "매칭 중", value: stats.requests.matched, color: "text-blue-500" },
-                { label: "강의 완료", value: stats.requests.completed, color: "text-green-600" },
-              ].map((s) => (
-                <div key={s.label} className="bg-white rounded-2xl p-4 border border-gray-100 text-center">
-                  <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
-                  <p className="text-xs text-gray-400 mt-1">{s.label}</p>
-                </div>
-              ))}
             </div>
           </>
-        )}
-
-        {/* 강사 관리 탭 */}
-        {tab === "leaders" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-hwaseong-text">강사 목록 ({leaders.length}명)</h3>
-            </div>
-            {leaders.map((leader) => (
-              <div key={leader.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-hwaseong-blue/10 rounded-xl flex items-center justify-center text-xl font-bold text-hwaseong-blue flex-shrink-0">
-                    {(leader.realName ?? leader.maskedName)[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <p className="font-semibold text-hwaseong-text">{leader.realName ?? leader.maskedName}</p>
-                      {leader.isVerified
-                        ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ 인증됨</span>
-                        : <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">인증 대기</span>
-                      }
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-2">
-                      <span>{CERT_LABELS[leader.certLevel]}</span>
-                      <span>⭐ {leader.ratingAvg.toFixed(1)}</span>
-                      <span>강의 {leader.totalLectures}회</span>
-                    </div>
-                    {leader.specialties.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {leader.specialties.slice(0, 3).map((s) => (
-                          <span key={s} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{s}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-2 flex-shrink-0">
-                    {!leader.isVerified ? (
-                      <>
-                        <button onClick={() => handleVerify(leader.id, true, 2)} className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors">Lv.2 인증</button>
-                        <button onClick={() => handleVerify(leader.id, true, 1)} className="text-xs bg-hwaseong-blue text-white px-3 py-1.5 rounded-lg hover:bg-blue-900 transition-colors">Lv.1 인증</button>
-                      </>
-                    ) : (
-                      <button onClick={() => handleVerify(leader.id, false)} className="text-xs border border-red-300 text-red-500 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">인증 취소</button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* 요청 목록 탭 */}
-        {tab === "requests" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-hwaseong-text">전체 매칭 요청 ({requests.length}건)</h3>
-              <button onClick={() => setTab("matching")} className="text-xs bg-hwaseong-blue text-white px-3 py-1.5 rounded-lg">
-                매칭하기 →
-              </button>
-            </div>
-            {requests.map((req) => (
-              <div key={req.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div>
-                    <p className="font-semibold text-hwaseong-text text-sm">{req.title}</p>
-                    <p className="text-xs text-gray-500">{req.client?.name}</p>
-                  </div>
-                  <StatusBadge status={req.status} />
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                  <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {req.category}</span>
-                  <span className="bg-gray-50 px-2 py-1 rounded-lg">📍 {req.address}</span>
-                  <span className="bg-gray-50 px-2 py-1 rounded-lg">📅 {req.start_date}</span>
-                  <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {req.participant_count}명</span>
-                </div>
-                {req.leader && (
-                  <p className="text-xs text-blue-600 mt-2">배정 강사: {req.leader.realName ?? req.leader.maskedName}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* 매칭 관리 탭 */}
-        {tab === "matching" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-hwaseong-text">매칭 대기 요청 ({pendingRequests.length}건)</h3>
-            </div>
-
-            {pendingRequests.length === 0 && (
-              <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 text-gray-400">
-                <p className="text-4xl mb-3">🎉</p>
-                <p className="text-sm font-medium">대기 중인 매칭 요청이 없습니다.</p>
-              </div>
-            )}
-
-            {pendingRequests.map((req) => (
-              <MatchRequestCard
-                key={req.id}
-                req={req}
-                assignedReqId={assignedReqId}
-                onAssign={() => { setSelectedReqForAssign(req); setMatchModal(true); setAssignedReqId(null); }}
-              />
-            ))}
-
-            {/* 거절된 요청 섹션 */}
-            {rejectedRequests.length > 0 && (
-              <>
-                <div className="flex items-center gap-3 pt-2">
-                  <div className="flex-1 h-px bg-orange-200" />
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-base">⚠️</span>
-                    <h3 className="font-bold text-orange-700 text-sm">
-                      거절된 요청 — 재배정 필요 ({rejectedRequests.length}건)
-                    </h3>
-                  </div>
-                  <div className="flex-1 h-px bg-orange-200" />
-                </div>
-                <p className="text-xs text-gray-400 text-center -mt-1">강사가 거절한 요청입니다. 다른 강사를 배정해 주세요.</p>
-                {rejectedRequests.map((req) => (
-                  <MatchRequestCard
-                    key={req.id}
-                    req={req}
-                    assignedReqId={assignedReqId}
-                    onAssign={() => { setSelectedReqForAssign(req); setMatchModal(true); setAssignedReqId(null); }}
-                    rejected
-                  />
-                ))}
-              </>
-            )}
-          </div>
-        )}
-
-        {/* 활동 보고 탭 */}
-        {tab === "reports" && (
-          <div className="space-y-3">
-            <h3 className="font-bold text-hwaseong-text">전체 활동 보고서 ({reports.length}건)</h3>
-            {reports.map((r) => (
-              <div key={r.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div>
-                    <p className="font-semibold text-hwaseong-text text-sm">{r.match?.title}</p>
-                    <p className="text-xs text-gray-500">강사: {r.match?.leader?.profiles?.name} · {r.match?.address}</p>
-                  </div>
-                  <span className="text-xs text-gray-400 flex-shrink-0">{r.lecture_date}</span>
-                </div>
-                <div className="flex flex-wrap gap-3 text-xs text-gray-500 mb-2">
-                  <span>참석자 <strong className="text-hwaseong-text">{r.attendance_count}명</strong></span>
-                  {r.rating_from_client !== null && (
-                    <span>만족도 <strong className="text-amber-500">⭐ {r.rating_from_client}</strong></span>
-                  )}
-                </div>
-                {r.report_text && <p className="text-xs text-gray-600 leading-relaxed">{r.report_text}</p>}
-              </div>
-            ))}
-          </div>
         )}
 
       </DashboardLayout>
@@ -554,234 +525,8 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* 강사 배정 워크플로우 모달 */}
-      {matchModal && selectedReqForAssign && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-          onClick={(e) => { if (e.target === e.currentTarget) setMatchModal(false); }}
-        >
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
-
-            {/* 헤더 — 요청 정보 */}
-            <div className="p-5 border-b border-gray-100 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold text-hwaseong-blue mb-1">강사 배정 워크플로우</p>
-                <h3 className="font-bold text-hwaseong-text line-clamp-1">{selectedReqForAssign.title}</h3>
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {selectedReqForAssign.address && (
-                    <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">📍 {selectedReqForAssign.address}</span>
-                  )}
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">🎯 {selectedReqForAssign.category}</span>
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">👥 {selectedReqForAssign.participant_count}명</span>
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">📅 {selectedReqForAssign.start_date}</span>
-                </div>
-              </div>
-              <button
-                onClick={() => setMatchModal(false)}
-                className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400"
-              >✕</button>
-            </div>
-
-            {/* 검색창 */}
-            <div className="px-4 pt-4 pb-2">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
-                <input
-                  type="text"
-                  value={leaderSearch}
-                  onChange={(e) => setLeaderSearch(e.target.value)}
-                  placeholder="이름 또는 전문 분야 검색"
-                  className="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
-                />
-                {leaderSearch && (
-                  <button onClick={() => setLeaderSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">✕</button>
-                )}
-              </div>
-              <p className="text-xs text-gray-400 mt-1.5 px-1">
-                인증 완료·활동 중인 강사 {filteredModalLeaders.length}명
-              </p>
-            </div>
-
-            {/* 강사 리스트 */}
-            <div className="overflow-y-auto flex-1 px-4 pb-2 space-y-2">
-              {filteredModalLeaders.length === 0 ? (
-                <div className="text-center text-gray-400 py-10 text-sm">
-                  <p className="text-3xl mb-2">🏅</p>
-                  {leaderSearch ? "검색 결과가 없습니다." : "배정 가능한 강사가 없습니다."}
-                </div>
-              ) : (
-                filteredModalLeaders.map((leader) => {
-                  const isSelected = selectedLeaderId === leader.id;
-                  return (
-                    <button
-                      key={leader.id}
-                      onClick={() => setSelectedLeaderId(isSelected ? null : leader.id)}
-                      className={`w-full text-left flex items-center gap-3 rounded-2xl p-4 border-2 transition-all ${
-                        isSelected
-                          ? "border-hwaseong-blue bg-blue-50 shadow-sm"
-                          : "border-transparent bg-gray-50 hover:border-gray-200 hover:bg-gray-100"
-                      }`}
-                    >
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold flex-shrink-0 transition-colors ${
-                        isSelected ? "bg-hwaseong-blue text-white" : "bg-hwaseong-blue/10 text-hwaseong-blue"
-                      }`}>
-                        {isSelected ? "✓" : (leader.realName ?? leader.maskedName)[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-hwaseong-text text-sm">{leader.realName ?? leader.maskedName}</p>
-                        <div className="flex gap-2 text-xs text-gray-500 mt-0.5">
-                          <span>{CERT_LABELS[leader.certLevel]}</span>
-                          <span>⭐ {leader.ratingAvg.toFixed(1)}</span>
-                          <span>강의 {leader.totalLectures}회</span>
-                        </div>
-                        {leader.specialties.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {leader.specialties.slice(0, 3).map((s) => (
-                              <span key={s} className={`text-[10px] px-1.5 py-0.5 rounded ${isSelected ? "bg-blue-200 text-blue-800" : "bg-blue-100 text-blue-700"}`}>{s}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      {isSelected && <span className="flex-shrink-0 text-xs font-bold text-hwaseong-blue">선택됨</span>}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-
-            {/* 하단 — 선택 요약 + 최종 배정 버튼 */}
-            <div className="p-4 border-t border-gray-100 space-y-2">
-              {selectedLeaderId && (() => {
-                const picked = filteredModalLeaders.find((l) => l.id === selectedLeaderId);
-                return picked ? (
-                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
-                    <span className="text-sm">✅</span>
-                    <p className="text-xs text-blue-800 font-semibold flex-1">
-                      {picked.realName ?? picked.maskedName} · {CERT_LABELS[picked.certLevel]}
-                    </p>
-                    <button onClick={() => setSelectedLeaderId(null)} className="text-blue-400 hover:text-blue-600 text-xs">변경</button>
-                  </div>
-                ) : null;
-              })()}
-              <button
-                onClick={() => selectedLeaderId && doSimpleAssign(selectedReqForAssign, selectedLeaderId)}
-                disabled={!selectedLeaderId || assigningId !== null}
-                className="w-full py-3 bg-hwaseong-blue text-white text-sm font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {assigningId ? "배정 중..." : selectedLeaderId ? "최종 배정" : "강사를 선택해 주세요"}
-              </button>
-              <button
-                onClick={() => setMatchModal(false)}
-                className="w-full py-2 text-sm text-gray-400 rounded-xl hover:bg-gray-100 transition-colors"
-              >취소</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
-}
-
-function LiveMatchRow({
-  req,
-  assignedReqId,
-  onAssign,
-}: {
-  req: MatchRequest;
-  assignedReqId: string | null;
-  onAssign: () => void;
-}) {
-  const isRejected = req.status === "rejected";
-  const isMatched  = req.status === "matched";
-  return (
-    <div className={`flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors ${isRejected ? "border-l-4 border-red-400 bg-red-50/30" : ""}`}>
-      <StatusBadge status={req.status} />
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-hwaseong-text text-sm truncate">{req.title}</p>
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-xs text-gray-500">
-          {req.client?.name && <span>🏢 {req.client.name}</span>}
-          {req.address && <span>📍 {req.address}</span>}
-          <span>📅 {req.start_date}</span>
-        </div>
-        {assignedReqId === req.id && (
-          <p className="text-[10px] text-green-600 font-semibold mt-0.5">✅ 배정 완료</p>
-        )}
-      </div>
-      {(req.status === "pending" || req.status === "rejected") && (
-        <button
-          onClick={onAssign}
-          className={`flex-shrink-0 px-3 py-1.5 text-xs font-bold text-white rounded-lg transition-colors ${
-            isRejected ? "bg-orange-500 hover:bg-orange-600" : "bg-hwaseong-blue hover:bg-blue-900"
-          }`}
-        >
-          {isRejected ? "재배정" : "배정"}
-        </button>
-      )}
-      {isMatched && (
-        <div className="flex-shrink-0 text-right">
-          <p className="text-[10px] text-sky-600 font-semibold">⏳ 수락 대기</p>
-          {req.leader && (
-            <p className="text-[10px] text-gray-400 mt-0.5">{req.leader.realName ?? req.leader.maskedName}</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MatchRequestCard({
-  req,
-  assignedReqId,
-  onAssign,
-  rejected = false,
-}: {
-  req: MatchRequest;
-  assignedReqId: string | null;
-  onAssign: () => void;
-  rejected?: boolean;
-}) {
-  return (
-    <div className={`rounded-2xl p-5 shadow-sm border ${rejected ? "bg-orange-50 border-orange-200" : "bg-white border-gray-100"}`}>
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div>
-          <p className="font-semibold text-hwaseong-text">{req.title}</p>
-          <p className="text-xs text-gray-500 mt-0.5">{req.client?.name}</p>
-        </div>
-        <StatusBadge status={req.status} />
-      </div>
-      <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-3">
-        <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {req.category}</span>
-        {req.address && <span className="bg-gray-50 px-2 py-1 rounded-lg">📍 {req.address}</span>}
-        <span className="bg-gray-50 px-2 py-1 rounded-lg">📅 {req.start_date}</span>
-        <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {req.participant_count}명</span>
-      </div>
-      {assignedReqId === req.id && (
-        <p className="text-xs text-green-600 font-semibold mb-2">✅ 강사 배정이 완료되었습니다.</p>
-      )}
-      <button
-        onClick={onAssign}
-        className={`w-full py-2.5 text-white text-sm font-bold rounded-xl transition-colors ${
-          rejected
-            ? "bg-orange-500 hover:bg-orange-600"
-            : "bg-hwaseong-blue hover:bg-blue-900"
-        }`}
-      >
-        {rejected ? "다른 강사 재배정하기" : "강사 배정하기"}
-      </button>
-    </div>
-  );
-}
-
-function calcRegionScore(leader: Leader | undefined, req: MatchRequest): number {
-  if (!leader) return 0;
-  return leader.availableRegions.some((r) => req.address?.includes(r) || r.includes(req.address ?? "")) ? 30 : 0;
-}
-
-function calcSpecialtyScore(leader: Leader | undefined, req: MatchRequest): number {
-  if (!leader) return 0;
-  const words = req.category.split(/[\s,]+/);
-  const matched = leader.specialties.filter((s) => words.some((w) => s.includes(w) || w.includes(s)));
-  return Math.min(matched.length * 15, 40);
 }
 
 function StatusBadge({ status }: { status: string }) {

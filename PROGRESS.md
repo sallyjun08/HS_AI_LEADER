@@ -1,6 +1,6 @@
 # 화성 AI 시민리더 잇다(IT-DA) — 개발 진행 현황
 
-마지막 업데이트: 2026-05-18
+마지막 업데이트: 2026-05-19 (세션 2)
 
 ---
 
@@ -25,11 +25,24 @@
 
 ### 강사(Leader) 대시보드
 - [x] 매칭 조회, 활동 보고서 제출, 프로필 수정
-- [x] **배정 수락 배너** — `status = 'matched'` 요청을 탭 위 상단에 크게 노출
+- [x] **배정 수락 배너** — `status = 'matched'` 요청을 탭 위 상단에 크게 노출 (amber 그라디언트 Hero)
 - [x] **수락 버튼** — `PATCH /api/match-requests/:id/accept` 호출 → status `'ongoing'`
-- [x] **거절 버튼** — `POST /api/match-requests/:id/reject` 호출 → `reject_match` RPC (status `'rejected'`, leader_id 초기화)
+- [x] **거절 버튼 + 모달** — 거절 사유 입력 팝업 → `POST /api/match-requests/:id/reject` + `reject_reason` 저장
 - [x] 매칭 요청 탭 카드에도 수락/거절 버튼 중복 표시
 - [x] 상태 변경 후 목록 실시간 갱신
+- [x] **요약 통계 3카드** — 이번 달 남은 강의(progress bar), 누적 강의 수, 평균 평점
+- [x] **내 일정 관리 탭** (`/api/schedule`) — status=ongoing 강의, 날짜 오름차순
+  - 카카오/네이버 지도 바로가기 버튼
+  - 수요처 담당자 연락처 공개 + 전화 걸기(`tel:`) 버튼
+  - 강의 자료실 (lecture_materials 테이블 연동, 파일 다운로드)
+  - 특이사항 메모 표시
+  - 보고서 미제출 시 "활동 보고서 제출하기 →" 버튼
+- [x] **활동 보고서 전용 페이지** (`/dashboard/leader/report?matchId=xxx`)
+  - 강의 날짜 자동 세팅(오늘), 참석자 수, 강의 일지 textarea
+  - 현장 사진 최대 3장 — Supabase Storage `activity-reports` 버킷 직접 업로드
+  - 모바일 카메라 연동 (`accept="image/*"`)
+  - 제출 시 activity_reports INSERT + match_requests status → 'completed'
+  - 성공 후 `/dashboard/leader?reportSuccess=1` 리다이렉트 → "포트폴리오에 새로운 이력이 추가되었습니다 🎉" 토스트
 
 ### 수요처(Client) 대시보드
 - [x] 매칭 요청 등록, 강사 안심매칭(마스킹), 평점 작성
@@ -58,6 +71,17 @@
   - 하단 선택 요약 + **[최종 배정]** 버튼 (미선택 시 비활성)
   - 배정 성공 시 liveTab → "matched" 자동 이동
   - 성공/실패 **Toast 알림** (3.5초 자동 소멸, fade-up 애니메이션)
+- [x] **강사 관리 탭 제거** — `/admin/leaders` 전용 페이지로 통합 (중복 제거)
+
+### 교육 요청 검토 페이지 (`/admin/review`)
+- [x] 검토 대기 목록 — `status=pending, is_approved=false` 항목 리스트업
+- [x] 화성시 권역 필터 — 동부(동탄)/남부(봉담·향남)/서부(남양·팔탄)/북부(병점·기산)/전체
+- [x] 통합 검색 — 교육 주제·수요처명·카테고리·지역 텍스트 검색
+- [x] 상세 검토 모달 — 수요처명, 교육 주제, 분야, 대상, 참가자 수, 강의 방식, 희망 일시, 지역, 비고, 신청인 연락처
+- [x] **[요청 승인]** 버튼 — `PATCH /api/admin/match-requests/:id/approve` → `is_approved=true`, 매칭 관리 탭으로 이관
+- [x] **[반려/취소]** 버튼 — 사유 입력(최소 10자) 후 `PATCH /api/admin/match-requests/:id/cancel` → `status=cancelled`, `cancel_reason` 저장
+- [x] 처리 후 Toast 알림, 목록 실시간 갱신
+- [x] 매칭 관리 탭에서 미승인(`is_approved=false`) 항목 자동 제외
 
 ### 강사 관리 전용 페이지 (`/admin/leaders`)
 - [x] 인증 대기 / 인증 완료 탭 (카운트 배지)
@@ -78,24 +102,36 @@
 - [x] 관리자 사이드바 "강사 관리" → `/admin/leaders` 연결
 
 ### API
+- [x] /api/admin/match-requests/pending (GET — 검토 대기 목록, is_approved=false)
+- [x] /api/admin/match-requests/[id]/approve (PATCH — 승인, is_approved=true)
+- [x] /api/admin/match-requests/[id]/cancel (PATCH — 반려, status=cancelled + cancel_reason)
 - [x] /api/auth/login, logout, me, register, forgot-password, reset-password, check-email
 - [x] /api/leaders (GET 목록, PUT 프로필 수정)
 - [x] /api/leaders/[id] (GET 단건, 안심매칭 적용)
 - [x] /api/match-requests (GET 역할별, POST 등록)
 - [x] /api/match-requests/[id]/accept (PATCH — 강사 수락, status → 'ongoing')
 - [x] /api/match-requests/[id]/reject (POST — 강사 거절, reject_match RPC)
-- [x] /api/activity-reports (GET 역할별, POST 제출)
+- [x] /api/activity-reports (GET 역할별, POST 제출 + image_urls 지원)
 - [x] /api/activity-reports/[id]/review (PATCH 평점)
 - [x] /api/admin/stats
 - [x] /api/admin/leaders/list (GET — 전체 강사, profiles 조인, is_active 무관)
 - [x] /api/admin/leaders/[id]/verify (PATCH 인증 + 등급)
 - [x] /api/admin/leaders/[id]/active (PATCH is_active 토글)
 - [x] /api/admin/match-requests/[id]/assign (POST 배정 + assign_leader_with_score RPC)
+- [x] /api/schedule (GET — 강사 전용, ongoing 매칭 + client 연락처 + lecture_materials)
+- [x] /api/upload-url (POST — Supabase Storage signed upload URL 발급, 강사 전용)
 
 ### DB 스키마 (Supabase SQL Editor에서 실행 완료)
 - [x] 001_init.sql
 - [x] 002_full_schema.sql — profiles, leader_profiles, match_requests, activity_reports, RLS, 함수
 - [x] 003_improvements.sql — assign_leader_with_score / reject_match 함수, 점수 컬럼, rejected 상태
+- [x] 004_review_fields.sql — match_requests에 is_approved, cancel_reason, reviewed_at, reviewed_by 추가
+- [x] 005~006 — 추가 개선 사항
+- [x] 007_reject_reason.sql — match_requests에 reject_reason 컬럼 추가
+- [x] 008_schedule_features.sql — profiles에 phone 컬럼, lecture_materials 테이블 + RLS
+
+### Supabase Storage
+- [x] `activity-reports` 버킷 생성 (Public)
 
 ---
 
@@ -130,7 +166,7 @@
   - 프로덕션 URL도 추가 필요
 
 ### 코드
-- [ ] 수요처 요청 폼 — frequency(1회성/정기), location_type(대면/온라인/혼합) 선택 UI
+- [ ] 수요처 대시보드 — 완료된 강의 평점 작성 UI 개선
 - [ ] 강사 자격증 이미지 업로드 기능 (Supabase Storage 연동)
 - [ ] 프로덕션 배포 시 .env에 NEXT_PUBLIC_APP_URL 추가
 
@@ -153,7 +189,9 @@ pages/
   admin/
     leaders.tsx                    강사 관리 전용 페이지 (/admin/leaders)
   dashboard/
-    leader.tsx                     강사 대시보드 (수락/거절 UI 포함)
+    leader.tsx                     강사 대시보드 (수락/거절 Hero + 요약통계 + 일정탭)
+    leader/
+      report.tsx                   활동 보고서 제출 전용 페이지 (/dashboard/leader/report)
     client.tsx                     수요처 대시보드 (상태 배지 개편)
     admin.tsx                      운영자 대시보드 (실시간 현황 + 배정 워크플로우)
   api/
@@ -161,6 +199,8 @@ pages/
     leaders/                       index.ts, [id].ts
     match-requests/                index.ts, [id]/accept.ts, [id]/reject.ts
     activity-reports/              index.ts, [id]/review.ts
+    schedule.ts                    강사 일정 관리 (ongoing + client 연락처 + 자료실)
+    upload-url.ts                  Supabase Storage signed upload URL 발급
     admin/
       stats.ts
       leaders/
@@ -203,6 +243,7 @@ npm run dev   # localhost:9002
 
 ## 최근 커밋
 ```
+7b4c56d  docs: PROGRESS.md 최신화 — 매칭 워크플로우 구현 내용 반영
 f101957  feat: 운영자·강사·수요처 대시보드 매칭 워크플로우 전면 구현
 20bc809  feat: 화성 AI 시민리더 잇다(IT-DA) 플랫폼 전면 구축
 ```

@@ -46,8 +46,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     if (user.role !== "leader")
       return res.status(403).json({ error: "강사만 활동 보고서를 제출할 수 있습니다." });
 
-    const { matchId, lectureDate, attendeeCount, reportText } = req.body as {
-      matchId: string; lectureDate: string; attendeeCount: number; reportText?: string;
+    const { matchId, lectureDate, attendeeCount, reportText, imageUrls } = req.body as {
+      matchId: string; lectureDate: string; attendeeCount: number;
+      reportText?: string; imageUrls?: string[];
     };
 
     if (!matchId || !lectureDate || !attendeeCount) {
@@ -75,7 +76,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
 
     const { data: report, error } = await supabaseAdmin
       .from("activity_reports")
-      .insert({ match_id: matchId, instructor_id: lp.id, lecture_date: lectureDate, attendance_count: Number(attendeeCount), report_text: reportText })
+      .insert({
+        match_id: matchId,
+        instructor_id: lp.id,
+        lecture_date: lectureDate,
+        attendance_count: Number(attendeeCount),
+        report_text: reportText ?? null,
+        image_urls: Array.isArray(imageUrls) ? imageUrls.slice(0, 3) : [],
+      })
       .select()
       .single();
 

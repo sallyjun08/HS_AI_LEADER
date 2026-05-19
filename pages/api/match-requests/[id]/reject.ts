@@ -19,8 +19,16 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
   if (match.leader_id !== lp.id) return res.status(403).json({ error: "본인에게 배정된 요청이 아닙니다." });
   if (match.status !== "matched") return res.status(400).json({ error: "거절 가능한 상태가 아닙니다." });
 
-  const { error } = await supabaseAdmin.rpc("reject_match", { p_request_id: id });
+  const { error } = await supabaseAdmin.rpc("reject_match", {
+    p_request_id: id,
+    p_leader_id: lp.id,
+  });
   if (error) return res.status(500).json({ error: error.message });
+
+  const reason = (req.body as { reason?: string })?.reason?.trim() ?? null;
+  if (reason) {
+    await supabaseAdmin.from("match_requests").update({ reject_reason: reason }).eq("id", id);
+  }
 
   return res.status(200).json({ ok: true });
 }

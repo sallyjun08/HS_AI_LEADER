@@ -10,7 +10,8 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { icon: "📊", label: "현황",      href: "/dashboard/leader#overview" },
     { icon: "🔗", label: "매칭 요청", href: "/dashboard/leader#matches" },
     { icon: "📄", label: "활동 보고", href: "/dashboard/leader#reports" },
-    { icon: "👤", label: "프로필",    href: "/dashboard/leader#profile" },
+    { icon: "👤", label: "프로필",    href: "/dashboard/leader/profile" },
+    { icon: "🏆", label: "포트폴리오", href: "/dashboard/leader/portfolio" },
   ],
   client: [
     { icon: "📋", label: "내 매칭 요청", href: "/dashboard/client#requests" },
@@ -19,9 +20,10 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   admin: [
     { icon: "📊", label: "통계",        href: "/dashboard/admin#stats" },
     { icon: "🏅", label: "강사 관리",   href: "/admin/leaders" },
-    { icon: "📋", label: "요청 목록",   href: "/dashboard/admin#requests" },
-    { icon: "🔗", label: "매칭 관리",   href: "/dashboard/admin#matching" },
-    { icon: "📄", label: "활동 보고",   href: "/dashboard/admin#reports" },
+    { icon: "🔍", label: "요청 검토",   href: "/admin/review" },
+    { icon: "🎯", label: "매칭 센터",   href: "/admin/matching-center" },
+    { icon: "📋", label: "전체 요청 현황", href: "/admin/requests" },
+    { icon: "💰", label: "정산 관리",     href: "/admin/settlement" },
   ],
 };
 

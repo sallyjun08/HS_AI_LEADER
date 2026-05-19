@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: [
     "*.cloudworkstations.dev",
     "*.idx.dev",
-    "3001-firebase-hsaileader-1777025836179.cluster-xpmcxs2fjnhg6xvn446ubtgpio.cloudworkstations.dev",
+    "*.cluster-xpmcxs2fjnhg6xvn446ubtgpio.cloudworkstations.dev",
   ],
 };
 

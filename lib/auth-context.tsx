@@ -15,8 +15,10 @@ export interface AuthUser {
     isActive: boolean;
     specialties: string[];
     availableRegions: string[];
+    availableTimes: { weekdays?: string[]; time_slots?: string[] } | null;
     ratingAvg: number;
     totalLectures: number;
+    maxClassesMonth: number;
   } | null;
 }
 

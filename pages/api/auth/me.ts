@@ -10,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { data: lp } = await supabaseAdmin
     .from("leader_profiles")
-    .select("id, cert_level, is_verified, is_active, specialties, available_regions, rating_avg, total_lectures")
+    .select("id, cert_level, is_verified, is_active, specialties, available_regions, available_times, rating_avg, total_lectures, max_classes_month")
     .eq("user_id", user.userId)
     .maybeSingle();
 
@@ -27,8 +27,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           isActive: lp.is_active,
           specialties: lp.specialties ?? [],
           availableRegions: lp.available_regions ?? [],
+          availableTimes: lp.available_times ?? null,
           ratingAvg: lp.rating_avg ?? 0,
           totalLectures: lp.total_lectures ?? 0,
+          maxClassesMonth: lp.max_classes_month ?? 10,
         }
       : null,
   });

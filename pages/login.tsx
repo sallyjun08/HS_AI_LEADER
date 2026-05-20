@@ -62,18 +62,12 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
-
-    const { error: loginError } = await signIn(email, password);
-    
-    if (loginError) {
-      setError(loginError);
+    try {
+      const { error: loginError } = await signIn(email, password);
+      if (loginError) setError(loginError);
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    // useEffect가 user 상태 변화를 감지해 리다이렉트 처리
-    // 리다이렉트 실패 대비로 submitting 초기화
-    setSubmitting(false);
   }
 
   if (loading) {

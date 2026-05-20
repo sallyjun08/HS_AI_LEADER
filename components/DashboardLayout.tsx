@@ -39,6 +39,14 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentHash, setCurrentHash] = useState("");
+
+  useEffect(() => {
+    setCurrentHash(window.location.hash);
+    const handler = () => setCurrentHash(window.location.hash);
+    window.addEventListener("hashchange", handler);
+    return () => window.removeEventListener("hashchange", handler);
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/login");
@@ -132,7 +140,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
               const hrefPath = item.href.split("#")[0];
               // 해시가 있는 항목은 asPath 전체로 비교, 없는 항목은 pathname으로 비교
               const isActive = item.href.includes("#")
-                ? router.asPath === item.href
+                ? `${router.pathname}${currentHash}` === item.href
                 : router.pathname === hrefPath;
               return (
                 <Link

@@ -29,7 +29,7 @@ const ROLE_CONFIG: Record<LoginRole, {
 };
 
 export default function LoginPage() {
-  const { user, loading, refresh } = useAuth();
+  const { user, loading, signIn } = useAuth();
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedRole, setSelectedRole] = useState<LoginRole | null>(null);
@@ -71,8 +71,9 @@ export default function LoginPage() {
       return;
     }
 
-    // AuthContext의 signIn 내부에서 fetchMe와 리다이렉트를 처리하므로 
-    // 여기서는 추가 작업이 필요 없습니다.
+    // useEffect가 user 상태 변화를 감지해 리다이렉트 처리
+    // 리다이렉트 실패 대비로 submitting 초기화
+    setSubmitting(false);
   }
 
   if (loading) {

@@ -84,6 +84,8 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [feedLeaders, setFeedLeaders] = useState<FeedLeader[]>([]);
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{ accounts?: { leaders: { name: string; email: string; password: string }[]; client: { name: string; email: string; password: string } } } | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
@@ -108,6 +110,31 @@ export default function AdminDashboard() {
     setRefreshing(true);
     await fetchAll();
     setRefreshing(false);
+  }
+
+  async function handleSeed() {
+    setSeeding(true);
+    setSeedResult(null);
+    const res = await fetch("/api/admin/seed-data", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      setSeedResult(data);
+      setToast({ msg: "샘플 데이터 생성 완료!", ok: true });
+      fetchAll();
+    } else {
+      setToast({ msg: data.error ?? "생성 실패", ok: false });
+    }
+    setSeeding(false);
+  }
+
+  async function handleDeleteSeed() {
+    setSeeding(true);
+    setSeedResult(null);
+    const res = await fetch("/api/admin/seed-data", { method: "DELETE" });
+    const data = await res.json();
+    setToast({ msg: data.message ?? (res.ok ? "삭제 완료" : "삭제 실패"), ok: res.ok });
+    if (res.ok) fetchAll();
+    setSeeding(false);
   }
 
   // 토스트 자동 소멸
@@ -516,6 +543,50 @@ export default function AdminDashboard() {
             </div>
           </>
         )}
+
+        {/* ── 샘플 데이터 ─────────────────────────────────────────────────── */}
+        <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-gray-500">개발자 도구 — 샘플 데이터</h3>
+              <p className="text-xs text-gray-400 mt-0.5">매칭 알고리즘 테스트용 강사 5명 + 수요처 1명 + 대기 요청 3건 생성</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSeed}
+                disabled={seeding}
+                className="px-4 py-2 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 disabled:opacity-50 transition-colors"
+              >
+                {seeding ? "처리 중..." : "샘플 생성"}
+              </button>
+              <button
+                onClick={handleDeleteSeed}
+                disabled={seeding}
+                className="px-4 py-2 bg-red-100 text-red-600 text-xs font-bold rounded-xl hover:bg-red-200 disabled:opacity-50 transition-colors"
+              >
+                샘플 삭제
+              </button>
+            </div>
+          </div>
+
+          {seedResult?.accounts && (
+            <div className="mt-3 space-y-2">
+              <p className="text-xs font-bold text-gray-500 mb-1">생성된 테스트 계정 (비밀번호: Test1234!)</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {seedResult.accounts.leaders.map((l) => (
+                  <div key={l.email} className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs">
+                    <p className="font-bold text-hwaseong-text">{l.name}</p>
+                    <p className="text-gray-400 truncate">{l.email}</p>
+                  </div>
+                ))}
+                <div className="bg-white border border-green-200 rounded-xl px-3 py-2 text-xs">
+                  <p className="font-bold text-green-700">{seedResult.accounts.client.name}</p>
+                  <p className="text-gray-400 truncate">{seedResult.accounts.client.email}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
       </DashboardLayout>
 

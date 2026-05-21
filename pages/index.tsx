@@ -176,7 +176,7 @@ export default function Landing() {
             {user ? (
               <Link href={ROLE_REDIRECTS[user.role]}>
                 <button className="px-8 py-4 bg-white text-hwaseong-blue font-bold text-base rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
-                  내 대시보드로 이동 →
+                  {{ leader: "강사 대시보드로 이동", client: "수요처 대시보드로 이동", admin: "운영자 대시보드로 이동" }[user.role]} →
                 </button>
               </Link>
             ) : (

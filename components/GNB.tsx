@@ -170,7 +170,7 @@ export default function GNB() {
                       : "bg-white text-hwaseong-blue hover:bg-blue-50"
                   }`}
                 >
-                  내 대시보드 →
+                  {{ leader: "강사 대시보드", client: "수요처 대시보드", admin: "운영자 대시보드" }[user!.role]} →
                 </Link>
                 <button
                   onClick={handleSignOut}
@@ -295,7 +295,7 @@ export default function GNB() {
                   className="w-full block py-3 bg-hwaseong-blue text-white rounded-lg font-semibold text-sm text-center hover:bg-blue-900 transition-colors"
                   onClick={() => setMobileOpen(false)}
                 >
-                  내 대시보드 →
+                  {{ leader: "강사 대시보드", client: "수요처 대시보드", admin: "운영자 대시보드" }[user!.role]} →
                 </Link>
                 <button
                   onClick={() => { setMobileOpen(false); handleSignOut(); }}

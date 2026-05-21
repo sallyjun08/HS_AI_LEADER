@@ -26,7 +26,7 @@ export interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string, role?: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -65,14 +65,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchMe();
   }, []);
 
-  async function signIn(email: string, password: string) {
+  async function signIn(email: string, password: string, role?: string) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 10000);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, role }),
         signal: controller.signal,
       });
       clearTimeout(timer);

@@ -90,7 +90,14 @@ const STATUS_MAP: Record<string, { label: string; cls: string; icon: string; des
   },
 };
 
-type ReviewState = { reportId: string; rating: number };
+type ClientReport = {
+  id: string;
+  match_id: string;
+  rating_from_client: number | null;
+  client_feedback: string | null;
+};
+
+type ReviewState = { reportId: string; rating: number; feedback: string };
 
 export default function ClientDashboard() {
   const { user, loading, signOut } = useAuth();
@@ -98,6 +105,7 @@ export default function ClientDashboard() {
   const [showForm, setShowForm] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [requests, setRequests] = useState<MatchRequest[]>([]);
+  const [reports, setReports] = useState<ClientReport[]>([]);
   const [form, setForm] = useState({
     title: "", category: "",
     targetAudience: [] as string[],
@@ -106,15 +114,25 @@ export default function ClientDashboard() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [reviewState, setReviewState] = useState<ReviewState | null>(null);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "client")) router.replace("/login");
   }, [loading, user, router]);
 
+  async function fetchAll() {
+    const [reqs, reps] = await Promise.all([
+      fetch("/api/match-requests").then((r) => r.json()).catch(() => []),
+      fetch("/api/activity-reports").then((r) => r.json()).catch(() => []),
+    ]);
+    if (Array.isArray(reqs)) setRequests(reqs);
+    if (Array.isArray(reps)) setReports(reps);
+  }
+
   useEffect(() => {
     if (!user) return;
-    fetch("/api/match-requests").then((r) => r.json()).then(setRequests).catch(() => {});
+    fetchAll();
   }, [user]);
 
   async function submitRequest(e: React.FormEvent) {
@@ -139,8 +157,7 @@ export default function ClientDashboard() {
         }),
       });
       if (!res.ok) { const d = await res.json(); setError(d.error); return; }
-      const updated = await fetch("/api/match-requests").then((r) => r.json());
-      setRequests(updated);
+      await fetchAll();
       setShowForm(false);
       setForm({ title: "", category: "", targetAudience: [], customAudience: "", participantCount: "20", startDate: "", address: "", notes: "" });
     } finally {
@@ -148,18 +165,28 @@ export default function ClientDashboard() {
     }
   }
 
-  async function submitRating(reportId: string, rating: number) {
-    await fetch(`/api/activity-reports/${reportId}/review`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rating }),
-    });
-    setReviewState(null);
+  async function submitRating(reportId: string, rating: number, feedback: string) {
+    setRatingSubmitting(true);
+    try {
+      const res = await fetch(`/api/activity-reports/${reportId}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, feedback }),
+      });
+      if (res.ok) {
+        setReviewState(null);
+        await fetchAll();
+      }
+    } finally {
+      setRatingSubmitting(false);
+    }
   }
 
   if (loading || !user) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
+
+  const reportByMatchId = Object.fromEntries(reports.map((r) => [r.match_id, r]));
 
   const pending = requests.filter((r) => r.status === "pending").length;
   const matched = requests.filter((r) => ["matched", "ongoing"].includes(r.status)).length;
@@ -344,39 +371,77 @@ export default function ClientDashboard() {
                         </div>
                       )}
 
-                      {/* 평점 작성 (완료 후) */}
-                      {req.status === "completed" && (
-                        <div>
-                          {reviewState?.reportId === req.id ? (
-                            <div className="flex items-center gap-3">
-                              <div className="flex gap-1">
-                                {[1, 2, 3, 4, 5].map((v) => (
+                      {/* 평점 (완료 후) */}
+                      {req.status === "completed" && (() => {
+                        const report = reportByMatchId[req.id];
+                        if (!report) {
+                          return (
+                            <p className="text-xs text-gray-400 text-center py-2">
+                              강사가 아직 활동 보고서를 제출하지 않았습니다.
+                            </p>
+                          );
+                        }
+                        if (report.rating_from_client !== null) {
+                          return (
+                            <div className="px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="flex gap-0.5">
+                                  {[1,2,3,4,5].map((v) => (
+                                    <span key={v} className={`text-base ${v <= report.rating_from_client! ? "text-amber-400" : "text-gray-200"}`}>★</span>
+                                  ))}
+                                </div>
+                                <span className="text-xs font-semibold text-amber-700">{report.rating_from_client}점</span>
+                                <span className="text-xs text-gray-400">· 평가 완료</span>
+                              </div>
+                              {report.client_feedback && (
+                                <p className="text-xs text-gray-600 leading-relaxed">"{report.client_feedback}"</p>
+                              )}
+                            </div>
+                          );
+                        }
+                        if (reviewState?.reportId === report.id) {
+                          return (
+                            <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+                              <div className="flex items-center gap-1">
+                                {[1,2,3,4,5].map((v) => (
                                   <button
                                     key={v}
                                     onClick={() => setReviewState((p) => p ? { ...p, rating: v } : p)}
-                                    className={`text-xl transition-colors ${(reviewState?.rating ?? 0) >= v ? "text-amber-400" : "text-gray-200"}`}
+                                    className={`text-2xl transition-transform hover:scale-110 ${reviewState.rating >= v ? "text-amber-400" : "text-gray-200"}`}
                                   >★</button>
                                 ))}
+                                <span className="ml-2 text-xs font-bold text-amber-700">{reviewState.rating}점</span>
                               </div>
-                              <button
-                                onClick={() => submitRating(reviewState.reportId, reviewState.rating)}
-                                className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
-                              >제출</button>
-                              <button
-                                onClick={() => setReviewState(null)}
-                                className="text-xs text-gray-400 px-3 py-1.5 rounded-lg hover:bg-gray-100"
-                              >취소</button>
+                              <textarea
+                                rows={2}
+                                value={reviewState.feedback}
+                                onChange={(e) => setReviewState((p) => p ? { ...p, feedback: e.target.value } : p)}
+                                placeholder="강사에 대한 피드백을 자유롭게 남겨주세요. (선택)"
+                                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300/40 resize-none bg-white"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => submitRating(reviewState.reportId, reviewState.rating, reviewState.feedback)}
+                                  disabled={ratingSubmitting}
+                                  className="flex-1 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 disabled:opacity-60"
+                                >{ratingSubmitting ? "제출 중..." : "평가 제출"}</button>
+                                <button
+                                  onClick={() => setReviewState(null)}
+                                  className="px-3 py-1.5 text-xs text-gray-400 rounded-lg hover:bg-gray-100"
+                                >취소</button>
+                              </div>
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => setReviewState({ reportId: req.id, rating: 5 })}
-                              className="w-full py-2.5 border border-green-200 text-green-700 text-xs font-bold rounded-xl hover:bg-green-50 transition-colors"
-                            >
-                              ⭐ 만족도 평점 작성하기
-                            </button>
-                          )}
-                        </div>
-                      )}
+                          );
+                        }
+                        return (
+                          <button
+                            onClick={() => setReviewState({ reportId: report.id, rating: 5, feedback: "" })}
+                            className="w-full py-2.5 border border-amber-200 text-amber-700 text-xs font-bold rounded-xl hover:bg-amber-50 transition-colors"
+                          >
+                            ⭐ 만족도 평가 남기기
+                          </button>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

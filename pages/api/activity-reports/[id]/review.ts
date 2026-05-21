@@ -9,7 +9,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
   if (user.role !== "client") return res.status(403).json({ error: "수요처만 평점을 작성할 수 있습니다." });
 
   const { id } = req.query as { id: string };
-  const { rating } = req.body as { rating: number };
+  const { rating, feedback } = req.body as { rating: number; feedback?: string };
 
   if (!rating || rating < 1 || rating > 5) {
     return res.status(400).json({ error: "평점은 1~5 사이여야 합니다." });
@@ -34,7 +34,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
 
   const { data: updated, error } = await supabaseAdmin
     .from("activity_reports")
-    .update({ rating_from_client: Number(rating) })
+    .update({
+      rating_from_client: Number(rating),
+      client_feedback: feedback?.trim() || null,
+    })
     .eq("id", id)
     .select()
     .single();

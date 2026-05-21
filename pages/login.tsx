@@ -63,7 +63,7 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const { error: loginError } = await signIn(email, password);
+      const { error: loginError } = await signIn(email, password, selectedRole ?? undefined);
       if (loginError) setError(loginError);
     } finally {
       setSubmitting(false);

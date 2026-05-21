@@ -19,6 +19,7 @@ type Report = {
   report_text: string | null;
   image_urls: string[];
   rating_from_client: number | null;
+  client_feedback: string | null;
   submitted_at: string;
   admin_approved_at: string | null;
   match: { title: string; address: string | null } | null;
@@ -49,9 +50,12 @@ export default function LeaderReportsPage() {
   const [matches, setMatches] = useState<MatchRequest[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [reportForm, setReportForm] = useState({
-    matchId: "", lectureDate: "", attendeeCount: "", reportText: "", imageUrlsText: "",
+    matchId: "", lectureDate: "", attendeeCount: "", reportText: "",
   });
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [reportOk, setReportOk] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -85,11 +89,49 @@ export default function LeaderReportsPage() {
   );
   const pendingApprovalCount = useMemo(() => reports.filter((r) => r.admin_approved_at === null).length, [reports]);
 
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []).slice(0, 3);
+    setImageFiles(files);
+    setImagePreviews(files.map((f) => URL.createObjectURL(f)));
+    e.target.value = "";
+  }
+
+  function removeImage(idx: number) {
+    URL.revokeObjectURL(imagePreviews[idx]);
+    setImageFiles((p) => p.filter((_, i) => i !== idx));
+    setImagePreviews((p) => p.filter((_, i) => i !== idx));
+  }
+
+  async function uploadImages(): Promise<string[]> {
+    const urls: string[] = [];
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      setUploadProgress(`사진 업로드 중 ${i + 1}/${imageFiles.length}...`);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/upload/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, mimeType: file.type, data: base64 }),
+      });
+      if (res.ok) {
+        const { url } = await res.json();
+        urls.push(url);
+      }
+    }
+    setUploadProgress(null);
+    return urls;
+  }
+
   async function submitReport(e: React.SyntheticEvent) {
     e.preventDefault();
     setSubmittingReport(true);
     try {
-      const imageUrls = reportForm.imageUrlsText.split("\n").map((u) => u.trim()).filter(Boolean);
+      const imageUrls = imageFiles.length > 0 ? await uploadImages() : [];
       const res = await fetch("/api/activity-reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,7 +145,10 @@ export default function LeaderReportsPage() {
       });
       if (res.ok) {
         await fetchAll();
-        setReportForm({ matchId: "", lectureDate: "", attendeeCount: "", reportText: "", imageUrlsText: "" });
+        setReportForm({ matchId: "", lectureDate: "", attendeeCount: "", reportText: "" });
+        imagePreviews.forEach((u) => URL.revokeObjectURL(u));
+        setImageFiles([]);
+        setImagePreviews([]);
         setReportOk(true);
         setTimeout(() => setReportOk(false), 3000);
         setToast({ msg: "활동 보고서가 제출되었습니다.", ok: true });
@@ -113,6 +158,7 @@ export default function LeaderReportsPage() {
       }
     } finally {
       setSubmittingReport(false);
+      setUploadProgress(null);
     }
   }
 
@@ -169,17 +215,38 @@ export default function LeaderReportsPage() {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">현장 사진 URL (줄바꿈으로 구분)</label>
-                <textarea rows={2} value={reportForm.imageUrlsText}
-                  onChange={(e) => setReportForm((p) => ({ ...p, imageUrlsText: e.target.value }))}
-                  placeholder={"https://storage.example.com/photo1.jpg\nhttps://storage.example.com/photo2.jpg"}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none font-mono" />
-                <p className="text-[11px] text-gray-400 mt-1">Supabase Storage에 업로드 후 URL을 붙여넣어 주세요.</p>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">현장 사진 <span className="text-gray-400 font-normal">(최대 3장, 각 8MB 이하)</span></label>
+                {imagePreviews.length < 3 && (
+                  <label className="flex items-center justify-center gap-2 w-full py-3 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-hwaseong-blue/40 hover:bg-hwaseong-light transition-colors">
+                    <span className="text-lg">📷</span>
+                    <span className="text-xs text-gray-500">사진 선택하기</span>
+                    <input
+                      type="file" accept="image/*" multiple className="hidden"
+                      onChange={handleImageChange}
+                      disabled={submittingReport}
+                    />
+                  </label>
+                )}
+                {imagePreviews.length > 0 && (
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {imagePreviews.map((src, idx) => (
+                      <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 flex-shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={src} alt={`사진 ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(idx)}
+                          className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/60 text-white rounded-full flex items-center justify-center text-[10px] hover:bg-red-500 transition-colors"
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <button type="submit" disabled={submittingReport}
                 className="w-full py-3 bg-hwaseong-blue text-white text-sm font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
                 {submittingReport ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : "📤"}
-                {submittingReport ? "제출 중..." : reportOk ? "✅ 제출 완료!" : "보고서 제출"}
+                {uploadProgress ?? (submittingReport ? "제출 중..." : reportOk ? "✅ 제출 완료!" : "보고서 제출")}
               </button>
             </form>
           </div>
@@ -224,12 +291,25 @@ export default function LeaderReportsPage() {
                 )}
               </div>
               {r.report_text && <p className="text-xs text-gray-600 leading-relaxed mb-3 line-clamp-2">{r.report_text}</p>}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 <StarRating value={r.rating_from_client} />
-                {r.image_urls && r.image_urls.length > 0 && (
-                  <span className="text-[11px] text-gray-400">📷 현장사진 {r.image_urls.length}장</span>
-                )}
               </div>
+              {r.client_feedback && (
+                <p className="mt-2 text-xs text-gray-500 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 leading-relaxed">
+                  💬 {r.client_feedback}
+                </p>
+              )}
+              {r.image_urls && r.image_urls.length > 0 && (
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {r.image_urls.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                      className="w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0 hover:opacity-80 transition-opacity">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={`현장사진 ${i + 1}`} className="w-full h-full object-cover" />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

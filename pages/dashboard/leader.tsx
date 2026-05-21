@@ -32,12 +32,16 @@ export default function LeaderDashboard() {
     if (!loading && (!user || user.role !== "leader")) router.replace("/login");
   }, [loading, user, router]);
 
-  // 관리자 인증 처리 후 세션에 반영: 마운트 + 탭 포커스 복귀 시 재조회
+  // 관리자 인증 처리 후 세션에 반영: 마운트 + 탭 포커스 복귀 + 30초 폴링
   useEffect(() => {
     refresh();
     const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    const pollId = setInterval(refresh, 30_000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(pollId);
+    };
   }, []);
 
   useEffect(() => {

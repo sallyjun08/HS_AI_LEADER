@@ -14,7 +14,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     .select(`
       id, is_verified, is_active,
       specialties, available_regions, available_times,
-      preferred_audiences,
       bio, rating_avg, total_lectures, response_rate,
       profiles!leader_profiles_user_id_fkey(name, email)
     `)
@@ -34,7 +33,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     specialties:        Array.isArray(l.specialties)         ? l.specialties         : [],
     availableRegions:   Array.isArray(l.available_regions)  ? l.available_regions   : [],
     availableTimes:     l.available_times ?? null,
-    preferredAudiences: Array.isArray(l.preferred_audiences) ? l.preferred_audiences : [],
+    preferredAudiences: [],
     bio:              l.bio ?? null,
     ratingAvg:        Number(l.rating_avg)      || 0,
     totalLectures:    Number(l.total_lectures)  || 0,

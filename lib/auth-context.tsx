@@ -10,7 +10,6 @@ export interface AuthUser {
   role: UserRole;
   leaderProfile?: {
     id: string;
-    certLevel: number;
     isVerified: boolean;
     isActive: boolean;
     specialties: string[];
@@ -19,6 +18,8 @@ export interface AuthUser {
     ratingAvg: number;
     totalLectures: number;
     maxClassesMonth: number;
+    /** 강사가 설정한 선호/특화 교육 대상 — 매칭 시 대상 적합도 점수 산정에 사용됨 */
+    preferredAudiences: string[];
   } | null;
 }
 

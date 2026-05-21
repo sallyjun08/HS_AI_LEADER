@@ -3,7 +3,6 @@
 export type SafeLeader = {
   id: string;
   maskedName: string;
-  certLevel: number;
   isVerified: boolean;
   specialties: string[];
   availableRegions: string[];
@@ -30,7 +29,6 @@ function maskPhone(phone: string): string {
 export function maskLeader(
   leader: {
     id: string;
-    certLevel: number;
     isVerified: boolean;
     specialties: string[];
     availableRegions: string[];
@@ -47,7 +45,6 @@ export function maskLeader(
   const base: SafeLeader = {
     id: leader.id,
     maskedName: maskName(leader.name),
-    certLevel: leader.certLevel,
     isVerified: leader.isVerified,
     specialties: leader.specialties ?? [],
     availableRegions: leader.availableRegions ?? [],

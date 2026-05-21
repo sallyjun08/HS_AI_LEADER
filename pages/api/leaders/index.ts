@@ -47,7 +47,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: { userId
   if (req.method === "PUT") {
     if (user.role !== "leader") return res.status(403).json({ error: "강사만 수정할 수 있습니다." });
 
-    const { bio, specialties, availableRegions, availableTimes, phone, lat, lng } = req.body as {
+    const { bio, specialties, availableRegions, availableTimes, phone, lat, lng, preferredAudiences } = req.body as {
       bio?: string;
       specialties?: string[];
       availableRegions?: string[];
@@ -55,6 +55,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: { userId
       phone?: string;
       lat?: number;
       lng?: number;
+      /** 강사가 설정한 선호/특화 교육 대상 — 매칭 시 대상 적합도 점수 산정에 사용됨 */
+      preferredAudiences?: string[];
     };
 
     const updateData: Record<string, unknown> = {};
@@ -63,6 +65,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: { userId
     if (availableRegions !== undefined) updateData.available_regions = availableRegions;
     if (availableTimes !== undefined) updateData.available_times = availableTimes;
     if (phone !== undefined) updateData.phone = phone;
+    if (Array.isArray(preferredAudiences)) updateData.preferred_audiences = preferredAudiences;
     if (lat !== undefined && lng !== undefined) {
       updateData.lat = lat;
       updateData.lng = lng;
@@ -88,7 +91,6 @@ function toShape(l: any, name: string) {
   return {
     id: l.id,
     name,
-    certLevel: l.cert_level ?? 1,
     isVerified: l.is_verified ?? false,
     specialties: l.specialties ?? [],
     availableRegions: l.available_regions ?? [],

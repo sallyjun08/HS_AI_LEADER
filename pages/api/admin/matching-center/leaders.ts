@@ -12,8 +12,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
   const { data, error } = await supabaseAdmin
     .from("leader_profiles")
     .select(`
-      id, cert_level, is_verified, is_active,
+      id, is_verified, is_active,
       specialties, available_regions, available_times,
+      preferred_audiences,
       bio, rating_avg, total_lectures, response_rate,
       profiles!leader_profiles_user_id_fkey(name, email)
     `)
@@ -28,12 +29,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     id:               l.id,
     name:             l.profiles?.name ?? "—",
     email:            l.profiles?.email ?? "",
-    certLevel:        l.cert_level ?? 1,
     isVerified:       l.is_verified,
     isActive:         l.is_active ?? true,
-    specialties:      Array.isArray(l.specialties)      ? l.specialties      : [],
-    availableRegions: Array.isArray(l.available_regions) ? l.available_regions : [],
-    availableTimes:   l.available_times ?? null,
+    specialties:        Array.isArray(l.specialties)         ? l.specialties         : [],
+    availableRegions:   Array.isArray(l.available_regions)  ? l.available_regions   : [],
+    availableTimes:     l.available_times ?? null,
+    preferredAudiences: Array.isArray(l.preferred_audiences) ? l.preferred_audiences : [],
     bio:              l.bio ?? null,
     ratingAvg:        Number(l.rating_avg)      || 0,
     totalLectures:    Number(l.total_lectures)  || 0,

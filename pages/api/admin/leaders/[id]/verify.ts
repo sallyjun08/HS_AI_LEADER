@@ -8,14 +8,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
   if (req.method !== "PATCH") return res.status(405).end();
 
   const { id } = req.query as { id: string };
-  const { isVerified, certLevel } = req.body as { isVerified: boolean; certLevel?: number };
+  const { isVerified } = req.body as { isVerified: boolean };
 
   const { data, error } = await supabaseAdmin
     .from("leader_profiles")
-    .update({
-      is_verified: isVerified,
-      ...(certLevel !== undefined && { cert_level: certLevel }),
-    })
+    .update({ is_verified: isVerified })
     .eq("id", id)
     .select("*, profiles!leader_profiles_user_id_fkey(name, email)")
     .single();

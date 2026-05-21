@@ -9,7 +9,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
         .from("match_requests")
         .select(`*, client:profiles!match_requests_client_id_fkey(name),
           leader:leader_profiles!match_requests_leader_id_fkey(
-            id, cert_level, is_verified, rating_avg, specialties,
+            id, is_verified, rating_avg, specialties,
             profiles!leader_profiles_user_id_fkey(name)
           )`)
         .order("created_at", { ascending: false });
@@ -21,7 +21,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
       const { data, error } = await supabaseAdmin
         .from("match_requests")
         .select(`*, leader:leader_profiles!match_requests_leader_id_fkey(
-          id, cert_level, is_verified, rating_avg, specialties, available_regions,
+          id, is_verified, rating_avg, specialties, available_regions,
           profiles!leader_profiles_user_id_fkey(name)
         )`)
         .eq("client_id", user.userId)
@@ -56,9 +56,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     if (user.role !== "client")
       return res.status(403).json({ error: "수요처만 매칭 요청을 등록할 수 있습니다." });
 
-    const { title, category, targetAge, participantCount, institutionType,
+    const { title, category, targetAudience, participantCount, institutionType,
             startDate, endDate, address, notes, lectureTimes } = req.body as {
-      title: string; category: string; targetAge?: string;
+      title: string; category: string;
+      /** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+      targetAudience?: string[];
       participantCount: number; institutionType?: string;
       startDate: string; endDate?: string; address?: string;
       notes?: string; lectureTimes?: object[];
@@ -73,7 +75,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
       .insert({
         client_id: user.userId,
         title, category,
-        target_age: targetAge,
+        target_audience: Array.isArray(targetAudience) ? targetAudience : [],
         participant_count: Number(participantCount),
         institution_type: institutionType,
         start_date: startDate,

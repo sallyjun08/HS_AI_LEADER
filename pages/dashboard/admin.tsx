@@ -3,7 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 type Stats = {
   leaders: { total: number; verified: number };
@@ -16,7 +16,6 @@ type Leader = {
   id: string;
   maskedName: string;
   realName?: string;
-  certLevel: number;
   isVerified: boolean;
   isActive: boolean;
   specialties: string[];
@@ -48,20 +47,10 @@ type FeedLeader = {
   email: string;
   joinedAt: string;
   isVerified: boolean;
-  certLevel: number;
 };
 
 type FeedItem = { id: string; type: "request" | "report" | "leader"; title: string; sub: string; time: string };
 
-// 화성시 권역별 교육 신청 분포 (더미 데이터)
-const ZONE_PIE_DATA = [
-  { name: "동부 (동탄)",    value: 38, color: "#0ea5e9" },
-  { name: "남부 (봉담·향남)", value: 24, color: "#22c55e" },
-  { name: "서부 (남양·팔탄)", value: 19, color: "#8b5cf6" },
-  { name: "북부 (병점·기산)", value: 14, color: "#f97316" },
-  { name: "기타 지역",       value:  5, color: "#94a3b8" },
-];
-const ZONE_TOTAL = ZONE_PIE_DATA.reduce((a, b) => a + b.value, 0);
 
 function formatRelative(iso: string): string {
   if (!iso) return "";
@@ -267,67 +256,6 @@ export default function AdminDashboard() {
 
               {/* 왼쪽: 차트 2개 (2/3 너비) */}
               <div className="lg:col-span-2 space-y-6">
-
-                {/* 파이 차트 — 권역별 교육 신청 분포 */}
-                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-bold text-hwaseong-text">화성시 권역별 교육 신청 분포</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">누적 신청 기준 · 5개 생활권</p>
-                    </div>
-                    <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-1 rounded-lg font-semibold">
-                      샘플 데이터
-                    </span>
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-center gap-6">
-                    <div className="flex-shrink-0 w-full sm:w-56">
-                      <ResponsiveContainer width="100%" height={200}>
-                        <PieChart>
-                          <Pie
-                            data={ZONE_PIE_DATA}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={52}
-                            outerRadius={88}
-                            paddingAngle={3}
-                            dataKey="value"
-                            stroke="none"
-                          >
-                            {ZONE_PIE_DATA.map((entry, i) => (
-                              <Cell key={i} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={(v) => [`${v ?? 0}건`, "신청 수"]}
-                            contentStyle={{ borderRadius: 12, fontSize: 12 }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="flex-1 w-full space-y-2">
-                      {ZONE_PIE_DATA.map((d) => {
-                        const pct = Math.round((d.value / ZONE_TOTAL) * 100);
-                        return (
-                          <div key={d.name}>
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                                <span className="text-xs text-gray-600">{d.name}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-hwaseong-text">{d.value}건</span>
-                                <span className="text-[10px] text-gray-400 w-8 text-right">{pct}%</span>
-                              </div>
-                            </div>
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: d.color }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
 
                 {/* 바 차트 — 월별 교육 진행 현황 */}
                 <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">

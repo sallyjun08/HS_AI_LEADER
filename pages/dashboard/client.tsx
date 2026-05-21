@@ -3,13 +3,34 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  Bird, Backpack, BookOpen, Pencil, GraduationCap,
+  Briefcase, Home, Smile, PenLine,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const TARGET_AGES = ["학생", "성인", "시니어", "직장인", "기타"];
-const CERT_LABELS: Record<number, string> = { 1: "Lv.1 기초", 2: "Lv.2 리더", 3: "Lv.3 전문" };
+type AudienceOption = {
+  value: string;
+  line1: string;
+  line2?: string;
+  Icon: LucideIcon;
+  iconColor: string;
+};
 
+/** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+const TARGET_AUDIENCE_OPTIONS: AudienceOption[] = [
+  { value: "초등(저학년)", line1: "초등",    line2: "저학년",   Icon: Bird,          iconColor: "text-yellow-500" },
+  { value: "초등(고학년)", line1: "초등",    line2: "고학년",   Icon: Backpack,      iconColor: "text-orange-400" },
+  { value: "중학생",       line1: "중학생",                     Icon: BookOpen,      iconColor: "text-blue-500"   },
+  { value: "고등학생",     line1: "고등학생",                   Icon: Pencil,        iconColor: "text-indigo-500" },
+  { value: "대학생",       line1: "대학생",                     Icon: GraduationCap, iconColor: "text-purple-500" },
+  { value: "성인",         line1: "성인",                       Icon: Briefcase,     iconColor: "text-teal-600"   },
+  { value: "학부모",       line1: "학부모",                     Icon: Home,          iconColor: "text-green-600"  },
+  { value: "시니어(노인)", line1: "시니어",  line2: "노인",     Icon: Smile,         iconColor: "text-rose-400"   },
+  { value: "기타(직접 입력)", line1: "기타", line2: "직접 입력", Icon: PenLine,      iconColor: "text-gray-400"   },
+];
 type Leader = {
   id: string;
-  cert_level: number;
   is_verified: boolean;
   rating_avg: number;
   specialties: string[];
@@ -20,7 +41,8 @@ type MatchRequest = {
   id: string;
   title: string;
   category: string;
-  target_age: string | null;
+  /** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+  target_audience: string[] | null;
   participant_count: number;
   start_date: string;
   address: string | null;
@@ -73,10 +95,13 @@ type ReviewState = { reportId: string; rating: number };
 export default function ClientDashboard() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState<"requests" | "new">("requests");
+  const [showForm, setShowForm] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [requests, setRequests] = useState<MatchRequest[]>([]);
   const [form, setForm] = useState({
-    title: "", category: "", targetAge: "학생",
+    title: "", category: "",
+    targetAudience: [] as string[],
+    customAudience: "",
     participantCount: "20", startDate: "", address: "", notes: "",
   });
   const [submitting, setSubmitting] = useState(false);
@@ -97,13 +122,16 @@ export default function ClientDashboard() {
     setSubmitting(true);
     setError(null);
     try {
+      const audience = form.targetAudience.map((a) =>
+        a === "기타(직접 입력)" ? (form.customAudience.trim() || "기타") : a
+      );
       const res = await fetch("/api/match-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: form.title,
           category: form.category,
-          targetAge: form.targetAge,
+          targetAudience: audience,
           participantCount: Number(form.participantCount),
           startDate: form.startDate,
           address: form.address,
@@ -113,8 +141,8 @@ export default function ClientDashboard() {
       if (!res.ok) { const d = await res.json(); setError(d.error); return; }
       const updated = await fetch("/api/match-requests").then((r) => r.json());
       setRequests(updated);
-      setTab("requests");
-      setForm({ title: "", category: "", targetAge: "학생", participantCount: "20", startDate: "", address: "", notes: "" });
+      setShowForm(false);
+      setForm({ title: "", category: "", targetAudience: [], customAudience: "", participantCount: "20", startDate: "", address: "", notes: "" });
     } finally {
       setSubmitting(false);
     }
@@ -170,29 +198,35 @@ export default function ClientDashboard() {
           </div>
         </div>
 
-        {/* 탭 */}
-        <div className="flex gap-1 bg-gray-100 rounded-2xl p-1">
-          {(["requests", "new"] as const).map((t) => (
+        {/* 목록 헤더 */}
+        {!showForm && (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-bold text-hwaseong-text text-sm">매칭 요청 현황</p>
+              <p className="text-xs text-gray-400 mt-0.5">총 {requests.length}건</p>
+            </div>
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                tab === t ? "bg-white text-green-700 shadow-sm" : "text-gray-500 hover:text-gray-700"
-              }`}
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 active:scale-95 transition-all shadow-sm shadow-green-600/20"
             >
-              {t === "requests" ? `내 매칭 요청 (${requests.length})` : "+ 새 매칭 요청"}
+              <span className="text-base leading-none">+</span>
+              새 매칭 요청
             </button>
-          ))}
-        </div>
+          </div>
+        )}
 
         {/* 매칭 요청 목록 */}
-        {tab === "requests" && (
+        {!showForm && (
           <div className="space-y-4">
             {requests.length === 0 && (
-              <div className="bg-white rounded-2xl p-10 text-center border border-gray-100">
-                <p className="text-4xl mb-3">📋</p>
-                <p className="text-sm text-gray-400 mb-4">아직 매칭 요청이 없습니다.</p>
-                <button onClick={() => setTab("new")} className="px-6 py-2.5 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 transition-colors">
+              <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
+                <p className="text-5xl mb-4">📋</p>
+                <p className="font-bold text-gray-500 mb-1">아직 매칭 요청이 없습니다</p>
+                <p className="text-xs text-gray-400 mb-6">강의 요청을 등록하면 최적의 강사를 매칭해 드립니다.</p>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="px-8 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 transition-colors"
+                >
                   첫 매칭 요청하기
                 </button>
               </div>
@@ -200,93 +234,148 @@ export default function ClientDashboard() {
             {requests.map((req) => {
               const st = STATUS_MAP[req.status] ?? { label: req.status, cls: "bg-gray-100 text-gray-500", icon: "", desc: "" };
               const isRevealed = ["matched", "ongoing", "completed"].includes(req.status);
+              const isExpanded = expandedId === req.id;
               const l = req.leader;
               return (
-                <div key={req.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <p className="font-semibold text-hwaseong-text">{req.title}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{req.address} · {req.start_date}</p>
-                    </div>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 inline-flex items-center gap-1 ${st.cls}`}>
-                      {st.icon && <span className="text-[11px]">{st.icon}</span>}
-                      {st.label}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-4">
-                    <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {req.category}</span>
-                    <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {req.participant_count}명{req.target_age ? ` (${req.target_age})` : ""}</span>
-                  </div>
-
-                  {st.desc && <p className="text-xs text-blue-600 mb-3">{st.desc}</p>}
-
-                  {/* 배정된 강사 (안심매칭) */}
-                  {l && (
-                    <div className={`rounded-xl p-4 mb-3 ${isRevealed ? "bg-green-50 border border-green-200" : "bg-blue-50 border border-blue-100"}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs font-bold text-gray-700">배정된 강사</p>
-                        {!isRevealed ? (
-                          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">🔒 익명</span>
-                        ) : (
-                          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✅ 공개됨</span>
-                        )}
+                <div
+                  key={req.id}
+                  className={`bg-white rounded-2xl shadow-sm border transition-colors ${isExpanded ? "border-green-200" : "border-gray-100"}`}
+                >
+                  {/* 클릭 가능한 요약 헤더 */}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : req.id)}
+                    className="w-full text-left px-5 py-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-hwaseong-text text-sm leading-snug">{req.title}</p>
+                        <p className="text-xs text-gray-400 mt-0.5 truncate">{req.address} · {req.start_date}</p>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-hwaseong-blue/10 rounded-xl flex items-center justify-center text-lg">
-                          {isRevealed && l.profiles?.name ? l.profiles.name[0] : "?"}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full inline-flex items-center gap-1 ${st.cls}`}>
+                          {st.icon && <span className="text-[11px]">{st.icon}</span>}
+                          {st.label}
+                        </span>
+                        <span className={`text-gray-300 text-sm transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}>▾</span>
+                      </div>
+                    </div>
+
+                    {/* 태그 요약 (항상 노출) */}
+                    <div className="flex flex-wrap gap-1.5 mt-3 text-xs text-gray-500">
+                      <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {req.category}</span>
+                      <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {req.participant_count}명</span>
+                      {req.target_audience && req.target_audience.slice(0, 2).map((a) => (
+                        <span key={a} className="bg-blue-50 text-blue-600 px-2 py-1 rounded-lg">{a}</span>
+                      ))}
+                      {(req.target_audience?.length ?? 0) > 2 && (
+                        <span className="text-gray-400 px-1 py-1">+{(req.target_audience?.length ?? 0) - 2}</span>
+                      )}
+                    </div>
+
+                    {/* 수락 대기 중일 때 배정 강사 미리보기 */}
+                    {req.status === "matched" && l && (
+                      <div className="flex items-center gap-2 mt-3 px-3 py-2 bg-sky-50 border border-sky-200 rounded-xl">
+                        <div className="w-6 h-6 bg-hwaseong-blue/10 rounded-lg flex items-center justify-center text-xs font-bold text-hwaseong-blue flex-shrink-0">
+                          {l.profiles?.name?.[0] ?? "?"}
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-hwaseong-text">
-                            {isRevealed ? (l.profiles?.name ?? "-") : maskName(l.profiles?.name ?? "강사")}
-                          </p>
-                          <div className="flex gap-2 mt-0.5 text-xs text-gray-500">
-                            <span>⭐ {(l.rating_avg ?? 0).toFixed(1)}</span>
-                            <span>{CERT_LABELS[l.cert_level]}</span>
-                            {l.is_verified && <span className="text-green-600">✓ 인증</span>}
-                          </div>
-                          {l.specialties.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5">
-                              {l.specialties.slice(0, 2).map((s) => (
-                                <span key={s} className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded">{s}</span>
-                              ))}
-                            </div>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-semibold text-sky-800">
+                            {l.profiles?.name ?? "-"}
+                          </span>
+                          {l.is_verified && (
+                            <span className="ml-1.5 text-[10px] text-green-600 font-medium">✓ 인증 강사</span>
                           )}
                         </div>
+                        <span className="text-[10px] text-sky-500 flex-shrink-0">수락 대기 중</span>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </button>
 
-                  {/* 평점 작성 (완료 후) */}
-                  {req.status === "completed" && (
-                    <div className="mt-2">
-                      {reviewState?.reportId === req.id ? (
-                        <div className="flex items-center gap-3">
-                          <div className="flex gap-1">
-                            {[1, 2, 3, 4, 5].map((v) => (
-                              <button
-                                key={v}
-                                onClick={() => setReviewState((p) => p ? { ...p, rating: v } : p)}
-                                className={`text-xl transition-colors ${(reviewState?.rating ?? 0) >= v ? "text-amber-400" : "text-gray-200"}`}
-                              >★</button>
-                            ))}
-                          </div>
-                          <button
-                            onClick={() => submitRating(reviewState.reportId, reviewState.rating)}
-                            className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
-                          >제출</button>
-                          <button
-                            onClick={() => setReviewState(null)}
-                            className="text-xs text-gray-400 px-3 py-1.5 rounded-lg hover:bg-gray-100"
-                          >취소</button>
+                  {/* 펼쳐지는 상세 영역 */}
+                  {isExpanded && (
+                    <div className="px-5 pb-5 space-y-3 border-t border-gray-50 pt-4">
+                      {/* 전체 교육 대상 태그 */}
+                      {req.target_audience && req.target_audience.length > 2 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {req.target_audience.map((a) => (
+                            <span key={a} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg">{a}</span>
+                          ))}
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => setReviewState({ reportId: req.id, rating: 5 })}
-                          className="w-full py-2.5 border border-green-200 text-green-700 text-xs font-bold rounded-xl hover:bg-green-50 transition-colors"
-                        >
-                          ⭐ 만족도 평점 작성하기
-                        </button>
+                      )}
+
+                      {/* 상태 안내 */}
+                      {st.desc && (
+                        <p className="text-xs text-blue-600 bg-blue-50 rounded-xl px-3 py-2">{st.desc}</p>
+                      )}
+
+                      {/* 배정된 강사 (안심매칭) */}
+                      {l && (
+                        <div className={`rounded-xl p-4 ${isRevealed ? "bg-green-50 border border-green-200" : "bg-blue-50 border border-blue-100"}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-bold text-gray-700">배정된 강사</p>
+                            {!isRevealed ? (
+                              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">🔒 익명</span>
+                            ) : (
+                              <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✅ 공개됨</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-hwaseong-blue/10 rounded-xl flex items-center justify-center text-lg flex-shrink-0">
+                              {isRevealed && l.profiles?.name ? l.profiles.name[0] : "?"}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-hwaseong-text">
+                                {isRevealed ? (l.profiles?.name ?? "-") : maskName(l.profiles?.name ?? "강사")}
+                              </p>
+                              <div className="flex gap-2 mt-0.5 text-xs text-gray-500">
+                                <span>⭐ {(l.rating_avg ?? 0).toFixed(1)}</span>
+                                {l.is_verified && <span className="text-green-600">✓ 인증</span>}
+                              </div>
+                              {l.specialties.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  {l.specialties.slice(0, 3).map((s) => (
+                                    <span key={s} className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded">{s}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 평점 작성 (완료 후) */}
+                      {req.status === "completed" && (
+                        <div>
+                          {reviewState?.reportId === req.id ? (
+                            <div className="flex items-center gap-3">
+                              <div className="flex gap-1">
+                                {[1, 2, 3, 4, 5].map((v) => (
+                                  <button
+                                    key={v}
+                                    onClick={() => setReviewState((p) => p ? { ...p, rating: v } : p)}
+                                    className={`text-xl transition-colors ${(reviewState?.rating ?? 0) >= v ? "text-amber-400" : "text-gray-200"}`}
+                                  >★</button>
+                                ))}
+                              </div>
+                              <button
+                                onClick={() => submitRating(reviewState.reportId, reviewState.rating)}
+                                className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700"
+                              >제출</button>
+                              <button
+                                onClick={() => setReviewState(null)}
+                                className="text-xs text-gray-400 px-3 py-1.5 rounded-lg hover:bg-gray-100"
+                              >취소</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setReviewState({ reportId: req.id, rating: 5 })}
+                              className="w-full py-2.5 border border-green-200 text-green-700 text-xs font-bold rounded-xl hover:bg-green-50 transition-colors"
+                            >
+                              ⭐ 만족도 평점 작성하기
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -296,10 +385,21 @@ export default function ClientDashboard() {
           </div>
         )}
 
-        {/* 새 매칭 요청 */}
-        {tab === "new" && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <h3 className="font-bold text-hwaseong-text mb-5">새 강의 매칭 요청</h3>
+        {/* 새 매칭 요청 폼 */}
+        {showForm && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {/* 폼 헤더 */}
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100">
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); setError(null); }}
+                className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 text-gray-400 transition-colors flex-shrink-0"
+              >
+                ←
+              </button>
+              <h3 className="font-bold text-hwaseong-text text-sm">새 강의 매칭 요청</h3>
+            </div>
+            <div className="p-5">
             <form onSubmit={submitRequest} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">요청 제목</label>
@@ -317,24 +417,26 @@ export default function ClientDashboard() {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">대상</label>
-                  <select
-                    value={form.targetAge} onChange={(e) => setForm((p) => ({ ...p, targetAge: e.target.value }))}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 bg-white"
-                  >
-                    {TARGET_AGES.map((a) => <option key={a}>{a}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">예상 인원</label>
-                  <input
-                    type="number" min="1" value={form.participantCount}
-                    onChange={(e) => setForm((p) => ({ ...p, participantCount: e.target.value }))}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
-                  />
-                </div>
+              <AudiencePicker
+                selected={form.targetAudience}
+                customValue={form.customAudience}
+                onToggle={(val) =>
+                  setForm((p) => ({
+                    ...p,
+                    targetAudience: p.targetAudience.includes(val)
+                      ? p.targetAudience.filter((a) => a !== val)
+                      : [...p.targetAudience, val],
+                  }))
+                }
+                onCustomChange={(v) => setForm((p) => ({ ...p, customAudience: v }))}
+              />
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">예상 인원</label>
+                <input
+                  type="number" min="1" value={form.participantCount}
+                  onChange={(e) => setForm((p) => ({ ...p, participantCount: e.target.value }))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -378,6 +480,7 @@ export default function ClientDashboard() {
                 {submitting ? "제출 중..." : "매칭 요청 제출"}
               </button>
             </form>
+            </div>
           </div>
         )}
 
@@ -390,4 +493,84 @@ function maskName(name: string): string {
   if (name.length <= 1) return "*";
   if (name.length === 2) return name[0] + "*";
   return name[0] + "*".repeat(name.length - 2) + name[name.length - 1];
+}
+
+function AudiencePicker({
+  selected,
+  customValue,
+  onToggle,
+  onCustomChange,
+}: {
+  selected: string[];
+  customValue: string;
+  onToggle: (val: string) => void;
+  onCustomChange: (val: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-semibold text-gray-600">교육 대상</label>
+        <span className="text-[11px] text-gray-400">복수 선택 가능</span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {TARGET_AUDIENCE_OPTIONS.map((opt) => {
+          const isSelected = selected.includes(opt.value);
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => onToggle(opt.value)}
+              className={`relative flex flex-col items-center gap-1 rounded-2xl border-2 py-3.5 px-2 transition-all duration-150 select-none ${
+                isSelected
+                  ? "border-hwaseong-blue bg-hwaseong-blue text-white shadow-lg shadow-hwaseong-blue/20"
+                  : "border-gray-200 bg-gray-50 text-gray-600 hover:border-hwaseong-blue/40 hover:bg-hwaseong-light"
+              }`}
+            >
+              {isSelected && (
+                <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-white/25 rounded-full flex items-center justify-center">
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                    <path d="M1.5 4L3.5 6L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </span>
+              )}
+              <opt.Icon
+                size={22}
+                className={isSelected ? "text-white" : opt.iconColor}
+                strokeWidth={1.8}
+              />
+              <span className={`text-[11px] font-bold leading-tight text-center ${isSelected ? "text-white" : "text-gray-700"}`}>
+                {opt.line1}
+              </span>
+              {opt.line2 && (
+                <span className={`text-[10px] leading-tight text-center ${isSelected ? "text-white/80" : "text-gray-400"}`}>
+                  {opt.line2}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {selected.includes("기타(직접 입력)") && (
+        <div className="mt-3 relative">
+          <PenLine size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-hwaseong-blue/60" />
+          <input
+            type="text"
+            value={customValue}
+            onChange={(e) => onCustomChange(e.target.value)}
+            placeholder="예: 다문화 가정, 발달 장애인, 새터민 등"
+            className="w-full pl-8 pr-3 py-2.5 border-2 border-hwaseong-blue/30 bg-hwaseong-light rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/20 focus:border-hwaseong-blue/50 placeholder:text-gray-400"
+            autoFocus
+          />
+        </div>
+      )}
+
+      {selected.length > 0 && (
+        <p className="mt-2 text-[11px] text-hwaseong-blue font-medium">
+          선택됨: {selected.map((v) => v === "기타(직접 입력)" ? (customValue.trim() || "기타") : v).join(", ")}
+        </p>
+      )}
+    </div>
+  );
 }

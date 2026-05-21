@@ -10,7 +10,8 @@ type MatchingRequest = {
   id: string;
   title: string;
   category: string;
-  target_age: string | null;
+  /** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+  target_audience: string[] | null;
   participant_count: number;
   institution_type: string | null;
   address: string | null;
@@ -28,11 +29,12 @@ type MatchingRequest = {
 type MatchingLeader = {
   id: string;
   name: string;
-  certLevel: number;
   isActive: boolean;
   specialties: string[];
   availableRegions: string[];
   availableTimes: Record<string, unknown> | null;
+  /** 강사가 설정한 선호/특화 교육 대상 — 매칭 시 대상 적합도 점수 산정에 사용됨 */
+  preferredAudiences: string[];
   bio: string | null;
   ratingAvg: number;
   totalLectures: number;
@@ -45,15 +47,11 @@ type ScoredLeader = MatchingLeader & {
   specialtyScore: number;
   ratingScore: number;
   experienceScore: number;
+  audienceScore: number;
+  matchedAudiences: string[];
 };
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
-
-const CERT_LABELS: Record<number, { label: string; cls: string }> = {
-  1: { label: "Lv.1 기초",  cls: "bg-sky-100 text-sky-800" },
-  2: { label: "Lv.2 리더",  cls: "bg-indigo-100 text-indigo-800" },
-  3: { label: "Lv.3 전문",  cls: "bg-purple-100 text-purple-800" },
-};
 
 const DAY_MAP: Record<string, string> = {
   mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
@@ -98,17 +96,24 @@ function calcScores(leader: MatchingLeader, req: MatchingRequest): ScoredLeader 
   const matched = leader.specialties.filter((s) =>
     words.some((w) => s.includes(w) || w.includes(s))
   );
-  const specialtyScore = Math.min(matched.length * 15, 40);
-  const ratingScore    = Math.round((leader.ratingAvg / 5) * 20);
+  const specialtyScore  = Math.min(matched.length * 15, 40);
+  const ratingScore     = Math.round((leader.ratingAvg / 5) * 20);
   const experienceScore = Math.min(leader.totalLectures, 10);
+
+  // 대상 적합도: 수요처 교육 대상 ∩ 강사 선호 대상 (최대 +10pt)
+  const reqAudiences    = req.target_audience ?? [];
+  const matchedAudiences = reqAudiences.filter((a) => leader.preferredAudiences.includes(a));
+  const audienceScore   = Math.min(matchedAudiences.length * 5, 10);
 
   return {
     ...leader,
-    matchScore:     regionScore + specialtyScore + ratingScore + experienceScore,
+    matchScore:     regionScore + specialtyScore + ratingScore + experienceScore + audienceScore,
     regionScore,
     specialtyScore,
     ratingScore,
     experienceScore,
+    audienceScore,
+    matchedAudiences,
   };
 }
 
@@ -425,6 +430,9 @@ export default function MatchingCenter() {
                         {selectedReq.location_type && (
                           <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">{LOC_LABELS[selectedReq.location_type] ?? selectedReq.location_type}</span>
                         )}
+                        {selectedReq.target_audience && selectedReq.target_audience.length > 0 && selectedReq.target_audience.map((a) => (
+                          <span key={a} className="text-[10px] bg-purple-50 text-purple-600 px-2 py-0.5 rounded-lg">🎓 {a}</span>
+                        ))}
                       </div>
                     </div>
                     <button
@@ -432,6 +440,17 @@ export default function MatchingCenter() {
                       className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 text-xs"
                     >✕</button>
                   </div>
+
+                  {/* 대상 적합도 알림 (강사 선택 시) */}
+                  {selectedLeader && selectedLeader.audienceScore > 0 && (
+                    <div className="bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 flex items-center gap-2">
+                      <span className="text-sm flex-shrink-0">🎓</span>
+                      <p className="text-xs text-purple-700 font-semibold">
+                        선택 강사가 수요처 교육 대상 {selectedLeader.matchedAudiences.length}개와 일치합니다
+                        <span className="ml-1.5 text-purple-500 font-bold">(+{selectedLeader.audienceScore}pt 가산)</span>
+                      </p>
+                    </div>
+                  )}
 
                   {/* 이전 거절 강사 안내 */}
                   {prevLeader || selectedReq.prev_leader_id ? (
@@ -587,6 +606,11 @@ function RequestCard({
         )}
         <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">📅 {req.start_date}</span>
         <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">👥 {req.participant_count}명</span>
+        {req.target_audience && req.target_audience.length > 0 && (
+          <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded">
+            🎓 {req.target_audience.slice(0, 2).join("·")}{req.target_audience.length > 2 ? ` +${req.target_audience.length - 2}` : ""}
+          </span>
+        )}
       </div>
       {isRejected && (
         <p className="text-[10px] text-red-500 font-semibold mt-1.5">
@@ -610,8 +634,6 @@ function LeaderCard({
   isPrevRejector: boolean;
   onSelect: () => void;
 }) {
-  const cert = CERT_LABELS[leader.certLevel] ?? CERT_LABELS[1];
-
   return (
     <div className="relative">
       <button
@@ -636,9 +658,6 @@ function LeaderCard({
             <div className="min-w-0">
               <p className="text-sm font-bold text-hwaseong-text truncate">{leader.name}</p>
               <div className="flex items-center gap-1 mt-0.5">
-                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${cert.cls}`}>
-                  {cert.label}
-                </span>
                 {!leader.isActive && (
                   <span className="text-[10px] bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">비활성</span>
                 )}
@@ -651,7 +670,7 @@ function LeaderCard({
             <p className={`text-lg font-black leading-none ${scoreTextColor(leader.matchScore)}`}>
               {leader.matchScore}
             </p>
-            <p className="text-[10px] text-gray-400">/ 100점</p>
+            <p className="text-[10px] text-gray-400">/ 110점</p>
           </div>
         </div>
 
@@ -660,18 +679,40 @@ function LeaderCard({
           <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${scoreColor(leader.matchScore)}`}
-              style={{ width: `${leader.matchScore}%` }}
+              style={{ width: `${Math.min(Math.round(leader.matchScore / 110 * 100), 100)}%` }}
             />
           </div>
           {isSelected && (
-            <div className="flex gap-3 mt-1.5 text-[10px] text-gray-400">
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px] text-gray-400">
               <span>지역 {leader.regionScore}pt</span>
               <span>분야 {leader.specialtyScore}pt</span>
               <span>평점 {leader.ratingScore}pt</span>
               <span>경험 {leader.experienceScore}pt</span>
+              {leader.audienceScore > 0 && (
+                <span className="text-purple-600 font-bold">대상 +{leader.audienceScore}pt</span>
+              )}
             </div>
           )}
         </div>
+
+        {/* 대상 적합도 배지 (선택 시 & 일치하는 대상이 있을 때) */}
+        {isSelected && leader.audienceScore > 0 && (
+          <div className="mb-2 px-2.5 py-2 bg-purple-50 border border-purple-100 rounded-xl">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="text-[10px] font-black text-purple-600">🎓 대상 적합도</span>
+              <span className="text-[10px] font-black text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full">
+                +{leader.audienceScore}pt
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {leader.matchedAudiences.map((a) => (
+                <span key={a} className="text-[10px] bg-purple-100 text-purple-700 font-semibold px-1.5 py-0.5 rounded">
+                  {a}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 평점 + 강의 횟수 */}
         <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">

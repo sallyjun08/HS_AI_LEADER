@@ -4,19 +4,12 @@ import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
 
-const CERT_LEVELS: Record<number, { label: string; color: string }> = {
-  1: { label: "Lv.1 기초",  color: "bg-sky-100 text-sky-800" },
-  2: { label: "Lv.2 리더",  color: "bg-indigo-100 text-indigo-800" },
-  3: { label: "Lv.3 전문",  color: "bg-purple-100 text-purple-800" },
-};
-
 type AdminLeader = {
   id: string;
   userId: string;
   name: string;
   email: string;
   joinedAt: string;
-  certLevel: number;
   certNumber: string | null;
   certImageUrl: string | null;
   isVerified: boolean;
@@ -39,10 +32,9 @@ export default function AdminLeadersPage() {
   const [selected, setSelected] = useState<AdminLeader | null>(null);
 
   // Modal action states
-  const [certDraft, setCertDraft] = useState(1);
   const [savingVerify, setSavingVerify] = useState(false);
   const [savingActive, setSavingActive] = useState(false);
-  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
@@ -59,9 +51,8 @@ export default function AdminLeadersPage() {
     if (user) fetchLeaders();
   }, [user]);
 
-  // Sync cert draft when modal opens
   useEffect(() => {
-    if (selected) { setCertDraft(selected.certLevel); setActionMsg(null); }
+    if (selected) { setActionMsg(null); }
   }, [selected?.id]);
 
   const filtered = useMemo(() => {
@@ -75,38 +66,54 @@ export default function AdminLeadersPage() {
   const verifiedCount = leaders.filter((l) =>  l.isVerified).length;
   const activeCount   = leaders.filter((l) =>  l.isVerified && l.isActive).length;
 
-  async function handleVerify(isVerified: boolean, certLevel?: number) {
+  async function handleVerify(isVerified: boolean) {
     if (!selected) return;
     setSavingVerify(true);
     setActionMsg(null);
-    const res = await fetch(`/api/admin/leaders/${selected.id}/verify`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isVerified, ...(certLevel !== undefined && { certLevel }) }),
-    });
-    if (res.ok) {
-      setActionMsg(isVerified ? "인증이 승인되었습니다." : "인증이 취소되었습니다.");
-      await fetchLeaders();
-      setSelected((prev) => prev ? { ...prev, isVerified, certLevel: certLevel ?? prev.certLevel } : null);
+    try {
+      const res = await fetch(`/api/admin/leaders/${selected.id}/verify`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isVerified }),
+      });
+      if (res.ok) {
+        setActionMsg({ text: isVerified ? "인증이 승인되었습니다." : "인증이 취소되었습니다.", ok: true });
+        await fetchLeaders();
+        setSelected((prev) => prev ? { ...prev, isVerified } : null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setActionMsg({ text: (err as { error?: string }).error ?? "처리 중 오류가 발생했습니다.", ok: false });
+      }
+    } catch {
+      setActionMsg({ text: "네트워크 오류가 발생했습니다.", ok: false });
+    } finally {
+      setSavingVerify(false);
     }
-    setSavingVerify(false);
   }
 
   async function handleToggleActive(isActive: boolean) {
     if (!selected) return;
     setSavingActive(true);
     setActionMsg(null);
-    const res = await fetch(`/api/admin/leaders/${selected.id}/active`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive }),
-    });
-    if (res.ok) {
-      setActionMsg(isActive ? "활동이 재개되었습니다." : "매칭 후보에서 제외되었습니다.");
-      await fetchLeaders();
-      setSelected((prev) => prev ? { ...prev, isActive } : null);
+    try {
+      const res = await fetch(`/api/admin/leaders/${selected.id}/active`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (res.ok) {
+        setActionMsg({ text: isActive ? "활동이 재개되었습니다." : "매칭 후보에서 제외되었습니다.", ok: true });
+        await fetchLeaders();
+        setSelected((prev) => prev ? { ...prev, isActive } : null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setActionMsg({ text: (err as { error?: string }).error ?? "처리 중 오류가 발생했습니다.", ok: false });
+      }
+    } catch {
+      setActionMsg({ text: "네트워크 오류가 발생했습니다.", ok: false });
+    } finally {
+      setSavingActive(false);
     }
-    setSavingActive(false);
   }
 
   if (loading || !user) {
@@ -196,9 +203,6 @@ export default function AdminLeadersPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-bold text-hwaseong-text">{selected.name}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${CERT_LEVELS[selected.certLevel]?.color ?? "bg-gray-100 text-gray-500"}`}>
-                    {CERT_LEVELS[selected.certLevel]?.label}
-                  </span>
                   {selected.isVerified
                     ? <span className="text-[10px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">✓ 인증</span>
                     : <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">대기 중</span>
@@ -279,45 +283,20 @@ export default function AdminLeadersPage() {
 
               {/* Action msg */}
               {actionMsg && (
-                <div className="bg-green-50 border border-green-200 text-green-700 text-xs font-semibold px-4 py-2.5 rounded-xl">
-                  ✅ {actionMsg}
+                <div className={`text-xs font-semibold px-4 py-2.5 rounded-xl border ${
+                  actionMsg.ok
+                    ? "bg-green-50 border-green-200 text-green-700"
+                    : "bg-red-50 border-red-200 text-red-700"
+                }`}>
+                  {actionMsg.ok ? "✅" : "❌"} {actionMsg.text}
                 </div>
               )}
-
-              {/* Cert level selector */}
-              <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
-                <p className="text-xs font-bold text-gray-700">자격 등급 설정</p>
-                <div className="flex gap-2">
-                  {([1, 2, 3] as const).map((lv) => (
-                    <button
-                      key={lv}
-                      onClick={() => setCertDraft(lv)}
-                      className={`flex-1 py-2 text-xs font-bold rounded-xl border-2 transition-all ${
-                        certDraft === lv
-                          ? "border-hwaseong-blue bg-hwaseong-blue text-white"
-                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
-                      }`}
-                    >
-                      {CERT_LEVELS[lv].label}
-                    </button>
-                  ))}
-                </div>
-                {certDraft !== selected.certLevel && (
-                  <button
-                    onClick={() => handleVerify(selected.isVerified, certDraft)}
-                    disabled={savingVerify}
-                    className="w-full py-2 text-xs font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
-                  >
-                    {savingVerify ? "저장 중..." : "등급 변경 저장"}
-                  </button>
-                )}
-              </div>
 
               {/* Verify action */}
               <div className="flex gap-2">
                 {!selected.isVerified ? (
                   <button
-                    onClick={() => handleVerify(true, certDraft)}
+                    onClick={() => handleVerify(true)}
                     disabled={savingVerify}
                     className="flex-1 py-3 bg-hwaseong-blue text-white text-sm font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-50"
                   >
@@ -375,7 +354,6 @@ export default function AdminLeadersPage() {
 }
 
 function LeaderCard({ leader, onClick }: { leader: AdminLeader; onClick: () => void }) {
-  const cl = CERT_LEVELS[leader.certLevel];
   return (
     <button
       onClick={onClick}
@@ -391,9 +369,6 @@ function LeaderCard({ leader, onClick }: { leader: AdminLeader; onClick: () => v
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
             <p className="font-semibold text-hwaseong-text text-sm">{leader.name}</p>
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cl?.color ?? "bg-gray-100 text-gray-500"}`}>
-              {cl?.label}
-            </span>
             {leader.isVerified && (
               <span className="text-[10px] bg-green-100 text-green-700 font-bold px-1.5 py-0.5 rounded-full">✓ 인증</span>
             )}

@@ -3,8 +3,27 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  Bird, Backpack, BookOpen, Pencil, GraduationCap,
+  Briefcase, Home, Smile,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
+
+type AudienceTarget = { value: string; line1: string; line2?: string; Icon: LucideIcon; iconColor: string };
+
+/** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+const AUDIENCE_TARGETS: AudienceTarget[] = [
+  { value: "초등(저학년)", line1: "초등",    line2: "저학년",   Icon: Bird,          iconColor: "text-yellow-500" },
+  { value: "초등(고학년)", line1: "초등",    line2: "고학년",   Icon: Backpack,      iconColor: "text-orange-400" },
+  { value: "중학생",       line1: "중학생",                     Icon: BookOpen,      iconColor: "text-blue-500"   },
+  { value: "고등학생",     line1: "고등학생",                   Icon: Pencil,        iconColor: "text-indigo-500" },
+  { value: "대학생",       line1: "대학생",                     Icon: GraduationCap, iconColor: "text-purple-500" },
+  { value: "성인",         line1: "성인",                       Icon: Briefcase,     iconColor: "text-teal-600"   },
+  { value: "학부모",       line1: "학부모",                     Icon: Home,          iconColor: "text-green-600"  },
+  { value: "시니어(노인)", line1: "시니어",  line2: "노인",     Icon: Smile,         iconColor: "text-rose-400"   },
+];
 
 const SPECIALTY_GROUPS = [
   {
@@ -43,17 +62,6 @@ const TIME_SLOTS = [
   { key: "evening",   label: "저녁", sub: "18–21시" },
 ];
 
-const CERT_INFO: Record<number, { label: string; color: string; bg: string; border: string }> = {
-  1: { label: "AI 기초 이수", color: "text-sky-700",    bg: "bg-sky-50",    border: "border-sky-200" },
-  2: { label: "AI 시민 리더", color: "text-indigo-700", bg: "bg-indigo-50", border: "border-indigo-200" },
-  3: { label: "AI 전문 강사", color: "text-purple-700", bg: "bg-purple-50", border: "border-purple-200" },
-};
-
-const UPGRADE_REQS: Record<number, { lectures: number; rating: number; months?: number; nextLabel: string }> = {
-  1: { lectures: 10, rating: 4.0,  nextLabel: "Lv.2 AI 시민 리더" },
-  2: { lectures: 30, rating: 4.5, months: 6, nextLabel: "Lv.3 AI 전문 강사" },
-};
-
 // ─── 서브 컴포넌트 ─────────────────────────────────────────────────────────────
 
 function ProgressBar({
@@ -86,15 +94,14 @@ function ProgressBar({
 }
 
 function AdminPreviewCard({
-  name, certLevel, isVerified, specialties, availableRegions, weekdays, timeSlots, ratingAvg, totalLectures,
+  name, isVerified, specialties, availableRegions, weekdays, timeSlots, ratingAvg, totalLectures,
 }: {
-  name: string; certLevel: number; isVerified: boolean;
+  name: string; isVerified: boolean;
   specialties: string[]; availableRegions: string[];
   weekdays: string[]; timeSlots: string[];
   ratingAvg: number; totalLectures: number;
 }) {
   const [open, setOpen] = useState(false);
-  const cert = CERT_INFO[certLevel] ?? CERT_INFO[1];
   const wdMap: Record<string, string> = { mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일" };
   const tsMap: Record<string, string> = { morning: "오전", afternoon: "오후", evening: "저녁" };
 
@@ -125,9 +132,6 @@ function AdminPreviewCard({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold text-hwaseong-text text-sm">{name}</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cert.bg} ${cert.color} ${cert.border}`}>
-                    Lv.{certLevel} {cert.label}
-                  </span>
                   {isVerified && (
                     <span className="text-[10px] font-bold text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full">
                       ✓ 인증
@@ -209,6 +213,7 @@ export default function LeaderProfilePage() {
   const [bio, setBio] = useState("");
   const [phone, setPhone] = useState("");
   const [specialties, setSpecialties] = useState<string[]>([]);
+  const [preferredAudiences, setPreferredAudiences] = useState<string[]>([]);
   const [regions, setRegions] = useState<string[]>([]);
   const [weekdays, setWeekdays] = useState<string[]>([]);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
@@ -219,9 +224,12 @@ export default function LeaderProfilePage() {
       router.replace("/login");
       return;
     }
+    // 관리자 인증 처리 후 세션에 반영되도록 최신 프로필 재조회
+    refresh();
     if (!user?.leaderProfile) return;
     const lp = user.leaderProfile;
     setSpecialties(lp.specialties ?? []);
+    setPreferredAudiences(lp.preferredAudiences ?? []);
     setRegions(lp.availableRegions ?? []);
     setWeekdays(lp.availableTimes?.weekdays ?? []);
     setTimeSlots(lp.availableTimes?.time_slots ?? []);
@@ -239,6 +247,7 @@ export default function LeaderProfilePage() {
           bio: bio.trim() || undefined,
           phone: phone.trim() || undefined,
           specialties,
+          preferredAudiences,
           availableRegions: regions,
           availableTimes:
             weekdays.length > 0 || timeSlots.length > 0
@@ -259,11 +268,16 @@ export default function LeaderProfilePage() {
       setSaving(false);
       setTimeout(() => setSaveMsg(null), 4000);
     }
-  }, [bio, phone, specialties, regions, weekdays, timeSlots, refresh]);
+  }, [bio, phone, specialties, preferredAudiences, regions, weekdays, timeSlots, refresh]);
 
   // 전문 분야 토글
   const toggleSpecialty = useCallback((s: string) => {
     setSpecialties((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
+  }, []);
+
+  // 선호 교육 대상 토글
+  const toggleAudience = useCallback((a: string) => {
+    setPreferredAudiences((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]);
   }, []);
 
   // 지역 토글 + 권역 전체 선택
@@ -288,12 +302,9 @@ export default function LeaderProfilePage() {
     setTimeSlots((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]);
   }, []);
 
-  // 인증 관련 파생값
   const lp = user?.leaderProfile;
-  const certLevel = lp?.certLevel ?? 1;
   const ratingAvg = lp?.ratingAvg ?? 0;
   const totalLectures = lp?.totalLectures ?? 0;
-  const nextReq = UPGRADE_REQS[certLevel];
 
   const availabilityGrid = useMemo(() => {
     return WEEKDAYS.map((wd) => ({
@@ -312,8 +323,6 @@ export default function LeaderProfilePage() {
       </div>
     );
   }
-
-  const cert = CERT_INFO[certLevel] ?? CERT_INFO[1];
 
   return (
     <>
@@ -335,9 +344,6 @@ export default function LeaderProfilePage() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <h2 className="text-xl font-black text-white">{user.name}</h2>
-                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${cert.bg} ${cert.color} ${cert.border}`}>
-                  Lv.{certLevel} {cert.label}
-                </span>
                 {lp?.isVerified && (
                   <span className="text-[10px] font-bold bg-green-400/20 text-green-200 border border-green-400/40 px-2 py-0.5 rounded-full">
                     ✓ 공식 인증
@@ -364,7 +370,6 @@ export default function LeaderProfilePage() {
         {/* 운영자 뷰 미리보기 */}
         <AdminPreviewCard
           name={user.name}
-          certLevel={certLevel}
           isVerified={lp?.isVerified ?? false}
           specialties={specialties}
           availableRegions={regions}
@@ -435,11 +440,74 @@ export default function LeaderProfilePage() {
               </p>
             </div>
 
-            {/* 전문 분야 체크박스 */}
+            {/* 선호/특화 교육 대상 */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-hwaseong-text text-sm flex items-center gap-2">
                   <span className="w-6 h-6 bg-hwaseong-blue text-white text-xs font-black rounded-lg flex items-center justify-center">3</span>
+                  선호/특화 교육 대상
+                </h3>
+                <span className="text-xs text-hwaseong-blue font-bold bg-hwaseong-blue/10 px-2.5 py-1 rounded-full">
+                  {preferredAudiences.length}개 선택
+                </span>
+              </div>
+              <p className="text-xs text-gray-400">
+                주로 강의하는 교육 대상을 선택하세요. 운영자가 매칭할 때{" "}
+                <span className="font-semibold text-hwaseong-blue">대상 적합도 점수(최대 +10pt)</span>로 반영됩니다.
+              </p>
+
+              <div className="grid grid-cols-4 gap-2">
+                {AUDIENCE_TARGETS.map((opt) => {
+                  const isSelected = preferredAudiences.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => toggleAudience(opt.value)}
+                      className={`relative flex flex-col items-center gap-1 rounded-2xl border-2 py-3.5 px-1 transition-all duration-150 ${
+                        isSelected
+                          ? "border-hwaseong-blue bg-hwaseong-blue text-white shadow-lg shadow-hwaseong-blue/20"
+                          : "border-gray-200 bg-gray-50 hover:border-hwaseong-blue/40 hover:bg-hwaseong-light"
+                      }`}
+                    >
+                      {isSelected && (
+                        <span className="absolute top-1 right-1 w-4 h-4 bg-white/25 rounded-full flex items-center justify-center">
+                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+                            <path d="M1.5 4L3.5 6L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
+                      )}
+                      <opt.Icon size={20} className={isSelected ? "text-white" : opt.iconColor} strokeWidth={1.8} />
+                      <span className={`text-[11px] font-bold leading-tight text-center ${isSelected ? "text-white" : "text-gray-700"}`}>
+                        {opt.line1}
+                      </span>
+                      {opt.line2 && (
+                        <span className={`text-[10px] leading-tight text-center ${isSelected ? "text-white/80" : "text-gray-400"}`}>
+                          {opt.line2}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="bg-purple-50 border border-purple-100 rounded-xl px-3 py-2.5 text-xs text-purple-700 flex items-center justify-between">
+                <span>💡 강의 이력 기반 <strong>강점 배지</strong>는 포트폴리오에서 자동 생성됩니다.</span>
+                <button
+                  type="button"
+                  onClick={() => router.push("/dashboard/leader/portfolio")}
+                  className="ml-2 font-bold underline underline-offset-2 flex-shrink-0"
+                >
+                  포트폴리오 →
+                </button>
+              </div>
+            </div>
+
+            {/* 전문 분야 체크박스 */}
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-hwaseong-text text-sm flex items-center gap-2">
+                  <span className="w-6 h-6 bg-hwaseong-blue text-white text-xs font-black rounded-lg flex items-center justify-center">4</span>
                   전문 분야
                 </h3>
                 <span className="text-xs text-hwaseong-blue font-bold bg-hwaseong-blue/10 px-2.5 py-1 rounded-full">
@@ -677,144 +745,37 @@ export default function LeaderProfilePage() {
         {/* ── 인증 현황 ── */}
         {tab === "certification" && (
           <div className="space-y-4">
-            {/* 현재 등급 카드 */}
-            <div className={`rounded-2xl p-5 border ${cert.bg} ${cert.border}`}>
+            {/* 인증 상태 카드 */}
+            <div className={`rounded-2xl p-5 border ${lp?.isVerified ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
               <div className="flex items-center gap-4">
-                <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center border-2 ${cert.border} bg-white shadow-sm`}>
+                <div className={`w-16 h-16 rounded-2xl flex flex-col items-center justify-center border-2 bg-white shadow-sm ${lp?.isVerified ? "border-green-300" : "border-amber-300"}`}>
                   <span className="text-2xl font-black" style={{ lineHeight: 1 }}>
-                    {certLevel === 1 ? "🌱" : certLevel === 2 ? "🌿" : "🏆"}
+                    {lp?.isVerified ? "🏅" : "⏳"}
                   </span>
-                  <span className={`text-[10px] font-black mt-1 ${cert.color}`}>Lv.{certLevel}</span>
                 </div>
                 <div>
-                  <p className={`text-lg font-black ${cert.color}`}>{cert.label}</p>
-                  <div className={`flex items-center gap-2 mt-1 text-xs font-semibold ${cert.color} opacity-70`}>
+                  <p className={`text-lg font-black ${lp?.isVerified ? "text-green-700" : "text-amber-700"}`}>
+                    {lp?.isVerified ? "인증 완료" : "인증 심사 대기 중"}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 text-xs font-semibold opacity-70">
                     {lp?.isVerified ? (
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 text-green-700">
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                         </svg>
                         화성특례시 공식 인증 완료
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1">⏳ 관리자 인증 심사 대기 중</span>
+                      <span className="text-amber-700">관리자 검토 후 인증이 부여됩니다.</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 mt-2 text-xs">
-                    <span className={`${cert.color} font-bold`}>⭐ {ratingAvg.toFixed(1)}</span>
-                    <span className={`${cert.color} font-bold`}>📚 {totalLectures}회</span>
+                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
+                    <span className="font-bold">⭐ {ratingAvg.toFixed(1)}</span>
+                    <span className="font-bold">📚 {totalLectures}회</span>
                   </div>
                 </div>
               </div>
             </div>
-
-            {/* 등급별 요건 타임라인 */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-              <h3 className="font-bold text-hwaseong-text text-sm">등급 로드맵</h3>
-              <div className="space-y-6">
-                {[1, 2, 3].map((level) => {
-                  const info = CERT_INFO[level];
-                  const isPast = certLevel > level;
-                  const isCurrent = certLevel === level;
-                  return (
-                    <div key={level} className="flex gap-4">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-black border-2 flex-shrink-0 ${
-                          isPast ? "bg-green-500 border-green-500 text-white" :
-                          isCurrent ? `${info.bg} ${info.border} ${info.color}` :
-                          "bg-gray-100 border-gray-200 text-gray-400"
-                        }`}>
-                          {isPast ? "✓" : level}
-                        </div>
-                        {level < 3 && <div className={`w-0.5 h-6 mt-1 ${isPast ? "bg-green-300" : "bg-gray-200"}`} />}
-                      </div>
-                      <div className="flex-1 pb-4">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className={`text-sm font-bold ${isCurrent ? info.color : isPast ? "text-green-700" : "text-gray-400"}`}>
-                            Lv.{level} {info.label}
-                          </p>
-                          {isCurrent && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${info.bg} ${info.color} border ${info.border}`}>
-                              현재 등급
-                            </span>
-                          )}
-                          {isPast && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
-                              달성 완료
-                            </span>
-                          )}
-                        </div>
-                        {level === 1 && (
-                          <p className="text-xs text-gray-400">가입 후 관리자 인증을 받으면 부여됩니다.</p>
-                        )}
-                        {level === 2 && (
-                          <div className="space-y-1 text-xs text-gray-400">
-                            <p>완료 강의 10회 이상 · 평균 평점 4.0 이상</p>
-                          </div>
-                        )}
-                        {level === 3 && (
-                          <div className="space-y-1 text-xs text-gray-400">
-                            <p>완료 강의 30회 이상 · 평균 평점 4.5 이상 · 6개월 이상 활동</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 다음 등급 승급 조건 */}
-            {nextReq ? (
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-hwaseong-text text-sm">
-                    다음 단계 진행 현황
-                  </h3>
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${CERT_INFO[certLevel + 1]?.bg} ${CERT_INFO[certLevel + 1]?.color} ${CERT_INFO[certLevel + 1]?.border}`}>
-                    → {nextReq.nextLabel}
-                  </span>
-                </div>
-
-                <ProgressBar
-                  label="완료 강의 횟수"
-                  current={totalLectures}
-                  required={nextReq.lectures}
-                  unit="회"
-                />
-                <ProgressBar
-                  label="평균 수요처 평점"
-                  current={Math.round(ratingAvg * 10) / 10}
-                  required={nextReq.rating}
-                  unit="점"
-                  warn={ratingAvg > 0 && ratingAvg < nextReq.rating}
-                />
-
-                {totalLectures >= nextReq.lectures && ratingAvg >= nextReq.rating ? (
-                  <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 flex items-center gap-3">
-                    <span className="text-2xl">🎉</span>
-                    <div>
-                      <p className="text-sm font-bold text-green-800">요건 충족!</p>
-                      <p className="text-xs text-green-600">관리자에게 등급 승급을 요청하세요.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3">
-                    <p className="text-xs text-blue-700 font-semibold mb-1">승급 조건 안내</p>
-                    <p className="text-[11px] text-blue-600 leading-relaxed">
-                      활동 보고서를 제출하면 강의 횟수가 집계되고, 수요처가 평점을 남기면 평균 평점이 자동으로 반영됩니다.
-                      조건 충족 후 운영자에게 문의해 주세요.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-5 text-center">
-                <p className="text-3xl mb-2">🏆</p>
-                <p className="text-sm font-black text-purple-800">AI 전문 강사 최고 등급 달성!</p>
-                <p className="text-xs text-purple-600 mt-1">화성시 AI 시민교육을 이끄는 전문 강사입니다.</p>
-              </div>
-            )}
 
             {/* 인증 요청 안내 */}
             {!lp?.isVerified && (

@@ -12,7 +12,6 @@ export interface Profile {
 export interface InstructorProfile {
   id: string;
   user_id: string;
-  cert_level: number;
   cert_number: string | null;
   is_verified: boolean;
   is_active: boolean;
@@ -23,6 +22,8 @@ export interface InstructorProfile {
   public_email: string | null;
   avg_rating: number;
   total_lectures: number;
+  /** 강사가 설정한 선호/특화 교육 대상 — 매칭 시 대상 적합도 점수 산정에 사용됨 */
+  preferred_audiences: string[] | null;
   created_at: string;
 }
 
@@ -45,6 +46,8 @@ export interface MatchRequest {
   preferred_date: string;
   location: string;
   notes: string | null;
+  /** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+  target_audience: string[] | null;
   status: string;
   created_at: string;
 }

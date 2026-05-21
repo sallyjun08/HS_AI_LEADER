@@ -28,7 +28,6 @@ type SettlementReport = {
     location_type: string;
     leader: {
       id: string;
-      cert_level: number;
       profiles: { name: string; email: string } | null;
     } | null;
     client: { name: string; email: string } | null;
@@ -37,9 +36,6 @@ type SettlementReport = {
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
-const CERT_LABELS: Record<number, string> = {
-  1: "Lv.1 기초", 2: "Lv.2 리더", 3: "Lv.3 전문",
-};
 const LOC_LABELS:  Record<string, string> = { offline: "대면", online: "온라인", hybrid: "혼합" };
 const FREQ_LABELS: Record<string, string> = { single: "1회성", regular: "정기" };
 
@@ -138,7 +134,7 @@ function LectureCertificate({ report }: { report: SettlementReport }) {
             ["수  신", clientName],
             ["강의 제목", m?.title ?? "—"],
             ["카테고리", m?.category ?? "—"],
-            ["강  사", `${leaderName} (${CERT_LABELS[m?.leader?.cert_level ?? 1]})`],
+            ["강  사", leaderName],
             ["강의 일자", lectureDate],
             ["강의 장소", m?.address ?? "—"],
             ["강의 형태", m?.location_type ? (LOC_LABELS[m.location_type] ?? m.location_type) : "—"],
@@ -467,7 +463,7 @@ export default function SettlementPage() {
 
                   <div className="p-5 grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
                     {[
-                      { label: "강사",         value: `${selected.match?.leader?.profiles?.name ?? "—"}  (${CERT_LABELS[selected.match?.leader?.cert_level ?? 1]})` },
+                      { label: "강사",         value: selected.match?.leader?.profiles?.name ?? "—" },
                       { label: "수요처",        value: selected.match?.client?.name ?? "—" },
                       { label: "강의 일자",     value: fmtDate(selected.lecture_date ?? selected.match?.start_date) },
                       { label: "강의 주소",     value: selected.match?.address ?? "—" },

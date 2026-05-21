@@ -7,15 +7,14 @@ interface NavItem { icon: string; label: string; href: string }
 
 const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   leader: [
-    { icon: "📊", label: "현황",      href: "/dashboard/leader#overview" },
-    { icon: "🔗", label: "매칭 요청", href: "/dashboard/leader#matches" },
-    { icon: "📄", label: "활동 보고", href: "/dashboard/leader#reports" },
+    { icon: "📊", label: "현황",      href: "/dashboard/leader" },
+    { icon: "🔗", label: "매칭 요청", href: "/dashboard/leader/matches" },
+    { icon: "📄", label: "활동 보고", href: "/dashboard/leader/reports" },
     { icon: "👤", label: "프로필",    href: "/dashboard/leader/profile" },
     { icon: "🏆", label: "포트폴리오", href: "/dashboard/leader/portfolio" },
   ],
   client: [
-    { icon: "📋", label: "내 매칭 요청", href: "/dashboard/client#requests" },
-    { icon: "➕", label: "새 요청",      href: "/dashboard/client#new" },
+    { icon: "📋", label: "내 매칭 요청", href: "/dashboard/client" },
   ],
   admin: [
     { icon: "📊", label: "통계",        href: "/dashboard/admin#stats" },

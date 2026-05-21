@@ -25,7 +25,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
         id, title, category, address, start_date,
         participant_count, frequency, location_type,
         leader:leader_profiles!match_requests_leader_id_fkey(
-          id, cert_level,
+          id,
           profiles!leader_profiles_user_id_fkey(name, email)
         ),
         client:profiles!match_requests_client_id_fkey(name, email)

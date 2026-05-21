@@ -22,7 +22,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       name:            p?.name ?? "-",
       email:           p?.email ?? "-",
       joinedAt:        p?.created_at ?? l.created_at,
-      certLevel:       l.cert_level ?? 1,
       certNumber:      l.cert_number ?? null,
       certImageUrl:    l.cert_image_url ?? null,
       isVerified:      l.is_verified ?? false,

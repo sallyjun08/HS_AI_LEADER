@@ -7,6 +7,11 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis,
   ResponsiveContainer, Tooltip,
 } from "recharts";
+import {
+  Bird, Backpack, BookOpen, Pencil, GraduationCap,
+  Briefcase, Home, Smile,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -18,6 +23,8 @@ type MatchRequest = {
   start_date: string;
   address: string | null;
   participant_count: number;
+  /** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+  target_audience: string[] | null;
   client: { name: string } | null;
 };
 
@@ -36,11 +43,19 @@ type Report = {
 
 // ─── 상수 ─────────────────────────────────────────────────────────────────────
 
-const CERT_LABELS: Record<number, string> = {
-  1: "AI 기초 이수 (Lv.1)",
-  2: "AI 시민 리더 (Lv.2)",
-  3: "AI 전문 강사 (Lv.3)",
-};
+type AudienceTarget = { value: string; line1: string; line2?: string; Icon: LucideIcon; iconColor: string };
+
+/** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
+const AUDIENCE_TARGETS: AudienceTarget[] = [
+  { value: "초등(저학년)", line1: "초등",    line2: "저학년",   Icon: Bird,          iconColor: "text-yellow-500" },
+  { value: "초등(고학년)", line1: "초등",    line2: "고학년",   Icon: Backpack,      iconColor: "text-orange-400" },
+  { value: "중학생",       line1: "중학생",                     Icon: BookOpen,      iconColor: "text-blue-500"   },
+  { value: "고등학생",     line1: "고등학생",                   Icon: Pencil,        iconColor: "text-indigo-500" },
+  { value: "대학생",       line1: "대학생",                     Icon: GraduationCap, iconColor: "text-purple-500" },
+  { value: "성인",         line1: "성인",                       Icon: Briefcase,     iconColor: "text-teal-600"   },
+  { value: "학부모",       line1: "학부모",                     Icon: Home,          iconColor: "text-green-600"  },
+  { value: "시니어(노인)", line1: "시니어",  line2: "노인",     Icon: Smile,         iconColor: "text-rose-400"   },
+];
 
 // ─── 별점 컴포넌트 ─────────────────────────────────────────────────────────────
 
@@ -228,7 +243,6 @@ function SpecialtyRadar({ matches }: { matches: MatchRequest[] }) {
 
 type CertProps = {
   name: string;
-  certLevel: number;
   isVerified: boolean;
   totalLectures: number;
   totalAttendees: number;
@@ -314,13 +328,12 @@ function CertificateModal(p: CertProps) {
               {/* 강사 정보 */}
               <div className="bg-gray-50 rounded-2xl p-5 mb-4 space-y-3">
                 {[
-                  { label: "성명", value: p.name },
-                  { label: "자격 등급", value: CERT_LABELS[p.certLevel] ?? "—", blue: true },
+                  { label: "성명", value: p.name, ok: undefined as boolean | undefined },
                   { label: "인증 상태", value: p.isVerified ? "✓ 인증 완료" : "심사 대기", ok: p.isVerified },
-                ].map(({ label, value, blue, ok }) => (
+                ].map(({ label, value, ok }) => (
                   <div key={label} className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-gray-500">{label}</span>
-                    <span className={`text-sm font-bold ${blue ? "text-hwaseong-blue" : ok === true ? "text-green-700" : ok === false ? "text-amber-700" : "text-hwaseong-text"}`}>
+                    <span className={`text-sm font-bold ${ok === true ? "text-green-700" : ok === false ? "text-amber-700" : "text-hwaseong-text"}`}>
                       {value}
                     </span>
                   </div>
@@ -445,6 +458,18 @@ export default function PortfolioPage() {
     [reports],
   );
 
+  // 완료 강의 교육 대상 집계 → 강점 배지 자동 생성
+  const audienceStrength = useMemo(() => {
+    const counts: Record<string, number> = {};
+    completedMatches.forEach((m) => {
+      (m.target_audience ?? []).forEach((a) => {
+        counts[a] = (counts[a] ?? 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1]);
+  }, [completedMatches]);
+
   const { avgRating, ratedCount } = useMemo(() => {
     const rated = reports.filter((r) => r.rating_from_client !== null);
     const avg = rated.length
@@ -490,7 +515,6 @@ export default function PortfolioPage() {
                     </span>
                   )}
                 </div>
-                <p className="text-blue-200 text-xs mb-3">{CERT_LABELS[lp?.certLevel ?? 1]}</p>
                 {lp?.specialties && lp.specialties.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {lp.specialties.slice(0, 4).map((s) => (
@@ -524,6 +548,59 @@ export default function PortfolioPage() {
             ))}
           </div>
         </div>
+
+        {/* ── 강점 대상 배지 (자동 생성) ── */}
+        {(audienceStrength.length > 0 || !fetching) && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-hwaseong-text text-sm">강점 대상 배지</h3>
+              <span className="text-[11px] text-gray-400">완료 강의 기준 · 자동 생성</span>
+            </div>
+
+            {audienceStrength.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-6 text-center text-gray-300">
+                <p className="text-3xl mb-2">🏅</p>
+                <p className="text-xs">교육 대상이 기록된 완료 강의가 쌓이면<br />강점 배지가 자동으로 생성됩니다.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {audienceStrength.map(([audience, count]) => {
+                  const opt = AUDIENCE_TARGETS.find((o) => o.value === audience);
+                  const tier =
+                    count >= 10 ? { label: "마스터",   badge: "🏆", color: "text-amber-700",  bg: "bg-amber-50",  border: "border-amber-200",  bar: "bg-amber-400" }
+                  : count >= 5  ? { label: "전문 대상", badge: "🌟", color: "text-green-700",  bg: "bg-green-50",  border: "border-green-200",  bar: "bg-green-500" }
+                  : count >= 3  ? { label: "강점 대상", badge: "⚡", color: "text-hwaseong-blue", bg: "bg-hwaseong-blue/5", border: "border-hwaseong-blue/20", bar: "bg-hwaseong-blue" }
+                  :               { label: "경험 보유", badge: "📌", color: "text-gray-500",   bg: "bg-gray-50",   border: "border-gray-200",   bar: "bg-gray-300" };
+
+                  return (
+                    <div key={audience} className={`rounded-xl border p-3 ${tier.bg} ${tier.border}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        {opt
+                          ? <opt.Icon size={18} className={opt.iconColor} strokeWidth={1.8} />
+                          : <span className="text-base">🎓</span>
+                        }
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-gray-700 truncate">{audience}</p>
+                          <span className={`text-[10px] font-bold ${tier.color}`}>
+                            {tier.badge} {tier.label}
+                          </span>
+                        </div>
+                        <span className={`text-sm font-black ${tier.color}`}>{count}회</span>
+                      </div>
+                      {/* 경험 바 (최대 10회 기준) */}
+                      <div className="h-1.5 bg-black/5 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${tier.bar}`}
+                          style={{ width: `${Math.min(count / 10 * 100, 100).toFixed(0)}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── 시각화 ── */}
         <div className="space-y-4">
@@ -660,7 +737,6 @@ export default function PortfolioPage() {
       {showCert && (
         <CertificateModal
           name={user.name}
-          certLevel={lp?.certLevel ?? 1}
           isVerified={lp?.isVerified ?? false}
           totalLectures={completedMatches.length}
           totalAttendees={totalAttendees}

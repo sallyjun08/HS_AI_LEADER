@@ -5,6 +5,7 @@ import { Sparkles, ShieldCheck, ClipboardList } from "lucide-react";
 import GNB from "@/components/GNB";
 import LiveCountBanner from "@/components/LiveCountBanner";
 import Footer from "@/components/Footer";
+import { useAuth, ROLE_REDIRECTS } from "@/lib/auth-context";
 
 /* ─── Hero slides ─────────────────────────────── */
 const HERO_SLIDES = [
@@ -108,6 +109,7 @@ function NetworkBg() {
 
 /* ══════════════════════════════════════════════ */
 export default function Landing() {
+  const { user } = useAuth();
   const [slide, setSlide]     = useState(0);
   const [newsTab, setNewsTab] = useState<NewsTab>("all");
 
@@ -171,16 +173,26 @@ export default function Landing() {
 
           {/* CTA */}
           <div className="flex flex-wrap gap-4 justify-center">
-            <Link href="/register?role=leader">
-              <button className="px-8 py-4 bg-white text-hwaseong-blue font-bold text-base rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
-                시민 리더로 참여하기 →
-              </button>
-            </Link>
-            <Link href="/register?role=client">
-              <button className="px-8 py-4 bg-white/15 border-2 border-white/60 text-white font-bold text-base rounded-xl hover:bg-white/25 backdrop-blur-sm transition-colors">
-                AI 교육 신청하기
-              </button>
-            </Link>
+            {user ? (
+              <Link href={ROLE_REDIRECTS[user.role]}>
+                <button className="px-8 py-4 bg-white text-hwaseong-blue font-bold text-base rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
+                  내 대시보드로 이동 →
+                </button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/register?role=leader">
+                  <button className="px-8 py-4 bg-white text-hwaseong-blue font-bold text-base rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all">
+                    시민 리더로 참여하기 →
+                  </button>
+                </Link>
+                <Link href="/register?role=client">
+                  <button className="px-8 py-4 bg-white/15 border-2 border-white/60 text-white font-bold text-base rounded-xl hover:bg-white/25 backdrop-blur-sm transition-colors">
+                    AI 교육 신청하기
+                  </button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
 

@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useAuth, ROLE_REDIRECTS } from "@/lib/auth-context";
+import { useRouter } from "next/router";
 
 const NAV = [
   {
@@ -46,10 +48,19 @@ const NAV = [
 ];
 
 export default function GNB() {
+  const { user, signOut } = useAuth();
+  const router = useRouter();
   const [scrolled, setScrolled]         = useState(false);
   const [mobileOpen, setMobileOpen]     = useState(false);
   const [activeMenu, setActiveMenu]     = useState<string | null>(null);
   const [openMobileSub, setOpenMobileSub] = useState<string | null>(null);
+
+  const dashboardHref = user ? ROLE_REDIRECTS[user.role] : "/login";
+
+  async function handleSignOut() {
+    await signOut();
+    router.push("/");
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 60);
@@ -149,26 +160,53 @@ export default function GNB() {
 
           {/* Desktop CTA */}
           <div className="hidden lg:flex items-center gap-2">
-            <Link
-              href="/login"
-              className={`px-4 py-2 text-sm font-semibold border-2 rounded-lg transition-colors ${
-                isLight
-                  ? "text-hwaseong-blue border-hwaseong-blue hover:bg-hwaseong-light"
-                  : "text-white border-white/60 hover:bg-white/15"
-              }`}
-            >
-              로그인
-            </Link>
-            <Link
-              href="/register"
-              className={`px-4 py-2 text-sm font-semibold rounded-lg shadow transition-colors ${
-                isLight
-                  ? "bg-hwaseong-blue text-white hover:bg-blue-900"
-                  : "bg-white text-hwaseong-blue hover:bg-blue-50"
-              }`}
-            >
-              회원가입
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  href={dashboardHref}
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg shadow transition-colors ${
+                    isLight
+                      ? "bg-hwaseong-blue text-white hover:bg-blue-900"
+                      : "bg-white text-hwaseong-blue hover:bg-blue-50"
+                  }`}
+                >
+                  내 대시보드 →
+                </Link>
+                <button
+                  onClick={handleSignOut}
+                  className={`px-4 py-2 text-sm font-semibold border-2 rounded-lg transition-colors ${
+                    isLight
+                      ? "text-gray-500 border-gray-300 hover:bg-gray-50"
+                      : "text-white/70 border-white/40 hover:bg-white/10"
+                  }`}
+                >
+                  로그아웃
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className={`px-4 py-2 text-sm font-semibold border-2 rounded-lg transition-colors ${
+                    isLight
+                      ? "text-hwaseong-blue border-hwaseong-blue hover:bg-hwaseong-light"
+                      : "text-white border-white/60 hover:bg-white/15"
+                  }`}
+                >
+                  로그인
+                </Link>
+                <Link
+                  href="/register"
+                  className={`px-4 py-2 text-sm font-semibold rounded-lg shadow transition-colors ${
+                    isLight
+                      ? "bg-hwaseong-blue text-white hover:bg-blue-900"
+                      : "bg-white text-hwaseong-blue hover:bg-blue-50"
+                  }`}
+                >
+                  회원가입
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile hamburger */}
@@ -250,20 +288,40 @@ export default function GNB() {
           ))}
 
           <div className="px-5 pt-5 space-y-2">
-            <Link
-              href="/login"
-              className="w-full block py-3 border-2 border-hwaseong-blue text-hwaseong-blue rounded-lg font-semibold text-sm text-center"
-              onClick={() => setMobileOpen(false)}
-            >
-              로그인
-            </Link>
-            <Link
-              href="/register"
-              className="w-full block py-3 bg-hwaseong-blue text-white rounded-lg font-semibold text-sm text-center hover:bg-blue-900 transition-colors"
-              onClick={() => setMobileOpen(false)}
-            >
-              회원가입 →
-            </Link>
+            {user ? (
+              <>
+                <Link
+                  href={dashboardHref}
+                  className="w-full block py-3 bg-hwaseong-blue text-white rounded-lg font-semibold text-sm text-center hover:bg-blue-900 transition-colors"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  내 대시보드 →
+                </Link>
+                <button
+                  onClick={() => { setMobileOpen(false); handleSignOut(); }}
+                  className="w-full block py-3 border-2 border-gray-300 text-gray-500 rounded-lg font-semibold text-sm text-center hover:bg-gray-50 transition-colors"
+                >
+                  로그아웃
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="w-full block py-3 border-2 border-hwaseong-blue text-hwaseong-blue rounded-lg font-semibold text-sm text-center"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  로그인
+                </Link>
+                <Link
+                  href="/register"
+                  className="w-full block py-3 bg-hwaseong-blue text-white rounded-lg font-semibold text-sm text-center hover:bg-blue-900 transition-colors"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  회원가입 →
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>

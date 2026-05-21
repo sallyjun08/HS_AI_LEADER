@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import { calculateMatchScore, type MatchMode } from "@/lib/matching-algorithm";
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
 
@@ -33,23 +34,27 @@ type MatchingLeader = {
   isActive: boolean;
   specialties: string[];
   availableRegions: string[];
-  availableTimes: Record<string, unknown> | null;
-  /** 강사가 설정한 선호/특화 교육 대상 — 매칭 시 대상 적합도 점수 산정에 사용됨 */
-  preferredAudiences: string[];
+  availableTimes: { weekdays?: string[]; time_slots?: string[] } | null;
   bio: string | null;
   ratingAvg: number;
   totalLectures: number;
   responseRate: number;
+  maxClassesMonth: number;
+  currentMonthLectures: number;
+  lastLectureDate: string | null;
 };
 
 type ScoredLeader = MatchingLeader & {
   matchScore: number;
+  baseScore: number;
   regionScore: number;
   specialtyScore: number;
-  ratingScore: number;
-  experienceScore: number;
-  audienceScore: number;
-  matchedAudiences: string[];
+  timeScore: number;
+  bonusScore: number;
+  penaltyScore: number;
+  bonuses: string[];
+  penalties: string[];
+  matchMode: MatchMode;
 };
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
@@ -89,32 +94,35 @@ function scoreTextColor(score: number): string {
 }
 
 function calcScores(leader: MatchingLeader, req: MatchingRequest): ScoredLeader {
-  const regionScore = leader.availableRegions.some(
-    (r) => (req.address ?? "").includes(r) || r.includes(req.address ?? "")
-  ) ? 30 : 0;
-
-  const words = req.category.split(/[\s,]+/);
-  const matched = leader.specialties.filter((s) =>
-    words.some((w) => s.includes(w) || w.includes(s))
+  const b = calculateMatchScore(
+    {
+      availableRegions:     leader.availableRegions,
+      specialties:          leader.specialties,
+      availableTimes:       leader.availableTimes,
+      ratingAvg:            leader.ratingAvg,
+      totalLectures:        leader.totalLectures,
+      maxClassesMonth:      leader.maxClassesMonth,
+      currentMonthLectures: leader.currentMonthLectures,
+      lastLectureDate:      leader.lastLectureDate,
+    },
+    {
+      address:   req.address,
+      category:  req.category,
+      startDate: req.start_date,
+    }
   );
-  const specialtyScore  = Math.min(matched.length * 15, 40);
-  const ratingScore     = Math.round((leader.ratingAvg / 5) * 20);
-  const experienceScore = Math.min(leader.totalLectures, 10);
-
-  // 대상 적합도: 수요처 교육 대상 ∩ 강사 선호 대상 (최대 +10pt)
-  const reqAudiences    = req.target_audience ?? [];
-  const matchedAudiences = reqAudiences.filter((a) => leader.preferredAudiences.includes(a));
-  const audienceScore   = Math.min(matchedAudiences.length * 5, 10);
-
   return {
     ...leader,
-    matchScore:     regionScore + specialtyScore + ratingScore + experienceScore + audienceScore,
-    regionScore,
-    specialtyScore,
-    ratingScore,
-    experienceScore,
-    audienceScore,
-    matchedAudiences,
+    matchScore:    b.totalScore,
+    baseScore:     b.baseScore,
+    regionScore:   b.regionScore,
+    specialtyScore: b.specialtyScore,
+    timeScore:     b.timeScore,
+    bonusScore:    b.bonusScore,
+    penaltyScore:  b.penaltyScore,
+    bonuses:       b.bonuses,
+    penalties:     b.penalties,
+    matchMode:     b.matchMode,
   };
 }
 
@@ -267,11 +275,11 @@ export default function MatchingCenter() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         leaderId:        selectedLeaderId,
-        matchScore:      leader?.matchScore      ?? 0,
-        regionScore:     leader?.regionScore     ?? 0,
-        specialtyScore:  leader?.specialtyScore  ?? 0,
-        ratingScore:     leader?.ratingScore     ?? 0,
-        experienceScore: leader?.experienceScore ?? 0,
+        matchScore:      leader?.matchScore   ?? 0,
+        regionScore:     leader?.regionScore  ?? 0,
+        specialtyScore:  leader?.specialtyScore ?? 0,
+        ratingScore:     leader?.bonusScore   ?? 0,
+        experienceScore: leader?.timeScore    ?? 0,
       }),
     });
     if (res.ok) {
@@ -465,6 +473,7 @@ export default function MatchingCenter() {
                   <span>🟢 초록 점수 — 70점 이상 (최적 매칭)</span>
                   <span>🟡 노란 점수 — 45점 이상 (적합)</span>
                   <span>⚪ 회색 점수 — 44점 이하 (낮은 매칭)</span>
+                  <span className="text-gray-400 mt-1">지역(40) + 분야(40) + 시간(20) + 보너스 − 패널티</span>
                 </div>
               </div>
             ) : (
@@ -511,14 +520,20 @@ export default function MatchingCenter() {
                     </div>
                   </div>
 
-                  {/* 대상 적합도 알림 (강사 선택 시) */}
-                  {selectedLeader && selectedLeader.audienceScore > 0 && (
-                    <div className="bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 flex items-center gap-2">
-                      <span className="text-sm flex-shrink-0">🎓</span>
-                      <p className="text-xs text-purple-700 font-semibold">
-                        선택 강사가 수요처 교육 대상 {selectedLeader.matchedAudiences.length}개와 일치합니다
-                        <span className="ml-1.5 text-purple-500 font-bold">(+{selectedLeader.audienceScore}pt 가산)</span>
-                      </p>
+                  {/* 보너스/패널티 알림 (강사 선택 시) */}
+                  {selectedLeader && (selectedLeader.bonusScore > 0 || selectedLeader.penaltyScore > 0) && (
+                    <div className={`border rounded-xl px-3 py-2 flex items-center gap-2 ${
+                      selectedLeader.penaltyScore > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"
+                    }`}>
+                      <span className="text-sm flex-shrink-0">{selectedLeader.penaltyScore > 0 ? "⚠️" : "✨"}</span>
+                      <div className="text-xs space-y-0.5">
+                        {selectedLeader.bonuses.map((b) => (
+                          <p key={b} className="text-green-700 font-semibold">{b}</p>
+                        ))}
+                        {selectedLeader.penalties.map((p) => (
+                          <p key={p} className="text-amber-700 font-semibold">{p}</p>
+                        ))}
+                      </div>
                     </div>
                   )}
 
@@ -763,12 +778,23 @@ function LeaderCard({
             </div>
           </div>
 
-          {/* 매칭 점수 */}
+          {/* 매칭 점수 + 권역 모드 */}
           <div className="text-right flex-shrink-0">
-            <p className={`text-lg font-black leading-none ${scoreTextColor(leader.matchScore)}`}>
-              {leader.matchScore}
-            </p>
-            <p className="text-[10px] text-gray-400">/ 110점</p>
+            <div className="flex items-center gap-1.5 justify-end">
+              {leader.matchMode !== "전체" && (
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                  leader.matchMode === "정확"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}>
+                  {leader.matchMode}
+                </span>
+              )}
+              <p className={`text-lg font-black leading-none ${scoreTextColor(leader.matchScore)}`}>
+                {leader.matchScore}
+              </p>
+            </div>
+            <p className="text-[10px] text-gray-400">/ 100점+보너스</p>
           </div>
         </div>
 
@@ -777,38 +803,33 @@ function LeaderCard({
           <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${scoreColor(leader.matchScore)}`}
-              style={{ width: `${Math.min(Math.round(leader.matchScore / 110 * 100), 100)}%` }}
+              style={{ width: `${Math.min(Math.round(leader.matchScore / 100 * 100), 100)}%` }}
             />
           </div>
           {isSelected && (
-            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px] text-gray-400">
-              <span>지역 {leader.regionScore}pt</span>
-              <span>분야 {leader.specialtyScore}pt</span>
-              <span>평점 {leader.ratingScore}pt</span>
-              <span>경험 {leader.experienceScore}pt</span>
-              {leader.audienceScore > 0 && (
-                <span className="text-purple-600 font-bold">대상 +{leader.audienceScore}pt</span>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[10px]">
+              <span className="text-gray-400">지역 {leader.regionScore}pt</span>
+              <span className="text-gray-400">분야 {leader.specialtyScore}pt</span>
+              <span className="text-gray-400">시간 {leader.timeScore}pt</span>
+              {leader.bonusScore > 0 && (
+                <span className="text-green-600 font-bold">보너스 +{leader.bonusScore}pt</span>
+              )}
+              {leader.penaltyScore > 0 && (
+                <span className="text-red-500 font-bold">패널티 -{leader.penaltyScore}pt</span>
               )}
             </div>
           )}
         </div>
 
-        {/* 대상 적합도 배지 (선택 시 & 일치하는 대상이 있을 때) */}
-        {isSelected && leader.audienceScore > 0 && (
-          <div className="mb-2 px-2.5 py-2 bg-purple-50 border border-purple-100 rounded-xl">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <span className="text-[10px] font-black text-purple-600">🎓 대상 적합도</span>
-              <span className="text-[10px] font-black text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded-full">
-                +{leader.audienceScore}pt
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {leader.matchedAudiences.map((a) => (
-                <span key={a} className="text-[10px] bg-purple-100 text-purple-700 font-semibold px-1.5 py-0.5 rounded">
-                  {a}
-                </span>
-              ))}
-            </div>
+        {/* 보너스/패널티 상세 (선택 시) */}
+        {isSelected && (leader.bonuses.length > 0 || leader.penalties.length > 0) && (
+          <div className="mb-2 px-2.5 py-2 bg-gray-50 border border-gray-100 rounded-xl space-y-0.5">
+            {leader.bonuses.map((b) => (
+              <p key={b} className="text-[10px] text-green-700 font-semibold">✨ {b}</p>
+            ))}
+            {leader.penalties.map((p) => (
+              <p key={p} className="text-[10px] text-red-600 font-semibold">⚠️ {p}</p>
+            ))}
           </div>
         )}
 

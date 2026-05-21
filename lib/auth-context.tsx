@@ -48,12 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const res = await fetch("/api/auth/me", { signal: controller.signal });
-      if (!res.ok) { setUser(null); return; }
+      const res = await fetch("/api/auth/me", { signal: controller.signal, cache: "no-store" });
+      if (res.status === 401) { setUser(null); return; }
+      if (!res.ok) return;
       const data = await res.json();
       setUser(data);
     } catch {
-      setUser(null);
+      // 네트워크 오류 시 기존 세션 유지
     } finally {
       clearTimeout(timer);
       setLoading(false);

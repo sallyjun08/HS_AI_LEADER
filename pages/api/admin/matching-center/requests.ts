@@ -12,16 +12,15 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
   const { data, error } = await supabaseAdmin
     .from("match_requests")
     .select(`
-      id, title, category, target_age, participant_count,
+      id, title, category, target_audience, participant_count,
       institution_type, address, start_date, notes,
-      frequency, location_type, status,
+      frequency, location_type, status, is_approved,
       prev_leader_id, created_at, updated_at,
       client:profiles!match_requests_client_id_fkey(name, email)
     `)
     .in("status", ["pending", "rejected"])
-    .eq("is_approved", true)
     .order("status", { ascending: false })   // rejected(r) > pending(p)
-    .order("updated_at", { ascending: false });
+    .order("created_at", { ascending: true });
 
   if (error) return res.status(500).json({ error: error.message });
   return res.status(200).json(data ?? []);

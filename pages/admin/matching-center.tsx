@@ -20,6 +20,7 @@ type MatchingRequest = {
   frequency: string;
   location_type: string;
   status: "pending" | "rejected";
+  is_approved: boolean;
   prev_leader_id: string | null;
   created_at: string;
   updated_at: string;
@@ -134,6 +135,9 @@ export default function MatchingCenter() {
   const [reqSearch,      setReqSearch]      = useState("");
   const [leaderSearch,   setLeaderSearch]   = useState("");
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [cancelMode,     setCancelMode]     = useState(false);
+  const [cancelReason,   setCancelReason]   = useState("");
+  const [cancelling,     setCancelling]     = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
@@ -145,10 +149,12 @@ export default function MatchingCenter() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // 강사 선택 초기화 (요청 변경 시)
+  // 강사 선택 + 반려 상태 초기화 (요청 변경 시)
   useEffect(() => {
     setSelectedLeaderId(null);
     setLeaderSearch("");
+    setCancelMode(false);
+    setCancelReason("");
   }, [selectedReq?.id]);
 
   async function fetchAll() {
@@ -170,6 +176,10 @@ export default function MatchingCenter() {
 
   const rejectedReqs = useMemo(
     () => requests.filter((r) => r.status === "rejected"),
+    [requests]
+  );
+  const newReqs = useMemo(
+    () => requests.filter((r) => r.status === "pending" && !r.is_approved),
     [requests]
   );
   const pendingReqs = useMemo(
@@ -224,6 +234,27 @@ export default function MatchingCenter() {
     () => scoredLeaders.find((l) => l.id === selectedLeaderId) ?? null,
     [scoredLeaders, selectedLeaderId]
   );
+
+  // ── 반려 실행 ────────────────────────────────────────────────────────────
+
+  async function handleCancel() {
+    if (!selectedReq || cancelling || cancelReason.trim().length < 10) return;
+    setCancelling(true);
+    const res = await fetch(`/api/admin/match-requests/${selectedReq.id}/cancel`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: cancelReason }),
+    });
+    if (res.ok) {
+      setRequests((prev) => prev.filter((r) => r.id !== selectedReq.id));
+      setToast({ msg: `"${selectedReq.title}" 요청이 반려되었습니다.`, ok: true });
+      setSelectedReq(null);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      setToast({ msg: (err as { error?: string }).error ?? "반려 처리 중 오류가 발생했습니다.", ok: false });
+    }
+    setCancelling(false);
+  }
 
   // ── 배정 실행 ────────────────────────────────────────────────────────────
 
@@ -280,6 +311,11 @@ export default function MatchingCenter() {
                 재배정 {rejectedReqs.length}건
               </span>
             )}
+            {newReqs.length > 0 && (
+              <span className="bg-green-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                신규 {newReqs.length}건
+              </span>
+            )}
             {pendingReqs.length > 0 && (
               <span className="bg-amber-400 text-white text-xs font-bold px-2.5 py-1 rounded-full">
                 대기 {pendingReqs.length}건
@@ -313,6 +349,9 @@ export default function MatchingCenter() {
                 <div className="flex gap-1">
                   {rejectedReqs.length > 0 && (
                     <span className="text-[11px] bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">⚠️ {rejectedReqs.length}</span>
+                  )}
+                  {newReqs.length > 0 && (
+                    <span className="text-[11px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">🆕 {newReqs.length}</span>
                   )}
                   <span className="text-[11px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">📥 {pendingReqs.length}</span>
                 </div>
@@ -366,16 +405,39 @@ export default function MatchingCenter() {
                     </>
                   )}
 
-                  {/* 대기 섹션 */}
-                  {filteredReqs.some((r) => r.status === "pending") && (
+                  {/* 신규 접수 섹션 */}
+                  {filteredReqs.some((r) => r.status === "pending" && !r.is_approved) && (
+                    <>
+                      <div className="flex items-center gap-1.5 px-1 py-1">
+                        <span className="text-xs font-bold text-green-600">🆕 신규 접수</span>
+                        <span className="text-[10px] bg-green-100 text-green-700 font-bold px-1.5 py-0.5 rounded-full">
+                          {filteredReqs.filter((r) => r.status === "pending" && !r.is_approved).length}
+                        </span>
+                      </div>
+                      {filteredReqs.filter((r) => r.status === "pending" && !r.is_approved).map((req) => (
+                        <RequestCard
+                          key={req.id}
+                          req={req}
+                          isSelected={selectedReq?.id === req.id}
+                          onSelect={() => setSelectedReq(selectedReq?.id === req.id ? null : req)}
+                        />
+                      ))}
+                      {filteredReqs.some((r) => r.status === "pending" && r.is_approved) && (
+                        <div className="border-t border-gray-100 my-2" />
+                      )}
+                    </>
+                  )}
+
+                  {/* 매칭 대기 섹션 (이미 검토된 요청) */}
+                  {filteredReqs.some((r) => r.status === "pending" && r.is_approved) && (
                     <>
                       <div className="flex items-center gap-1.5 px-1 py-1">
                         <span className="text-xs font-bold text-amber-600">📥 매칭 대기</span>
                         <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded-full">
-                          {filteredReqs.filter((r) => r.status === "pending").length}
+                          {filteredReqs.filter((r) => r.status === "pending" && r.is_approved).length}
                         </span>
                       </div>
-                      {filteredReqs.filter((r) => r.status === "pending").map((req) => (
+                      {filteredReqs.filter((r) => r.status === "pending" && r.is_approved).map((req) => (
                         <RequestCard
                           key={req.id}
                           req={req}
@@ -414,8 +476,10 @@ export default function MatchingCenter() {
                       <div className="flex items-center gap-2 mb-0.5">
                         {selectedReq.status === "rejected" ? (
                           <span className="text-[11px] bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">⚠️ 재배정</span>
+                        ) : !selectedReq.is_approved ? (
+                          <span className="text-[11px] bg-green-100 text-green-700 font-bold px-2 py-0.5 rounded-full">🆕 신규 접수</span>
                         ) : (
-                          <span className="text-[11px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">📥 신규</span>
+                          <span className="text-[11px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">📥 매칭 대기</span>
                         )}
                         <span className="text-[11px] text-gray-400">{selectedReq.client?.name}</span>
                       </div>
@@ -435,10 +499,16 @@ export default function MatchingCenter() {
                         ))}
                       </div>
                     </div>
-                    <button
-                      onClick={() => setSelectedReq(null)}
-                      className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 text-xs"
-                    >✕</button>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => setCancelMode(!cancelMode)}
+                        className="text-[10px] text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-1 rounded-lg transition-colors"
+                      >반려</button>
+                      <button
+                        onClick={() => setSelectedReq(null)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 text-xs"
+                      >✕</button>
+                    </div>
                   </div>
 
                   {/* 대상 적합도 알림 (강사 선택 시) */}
@@ -473,6 +543,34 @@ export default function MatchingCenter() {
                       </button>
                     </div>
                   ) : null}
+
+                  {/* 반려 입력 패널 */}
+                  {cancelMode && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-bold text-red-700">반려 사유 입력</p>
+                      <textarea
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                        placeholder="반려 사유를 구체적으로 입력하세요 (최소 10자)"
+                        rows={3}
+                        className="w-full px-2.5 py-2 border border-red-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-300 bg-white resize-none"
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleCancel}
+                          disabled={cancelling || cancelReason.trim().length < 10}
+                          className="flex-1 py-2 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 disabled:opacity-40 transition-colors"
+                        >
+                          {cancelling ? "처리 중..." : "반려 확정"}
+                        </button>
+                        <button
+                          onClick={() => { setCancelMode(false); setCancelReason(""); }}
+                          className="px-3 py-2 text-xs text-gray-400 rounded-lg hover:bg-gray-100 transition-colors"
+                        >취소</button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 강사 검색 */}
                   <div className="relative">

@@ -24,6 +24,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     .from("leader_profiles").select("id").eq("id", leaderId).maybeSingle();
   if (!lp) return res.status(404).json({ error: "강사를 찾을 수 없습니다." });
 
+  // 미승인 요청도 배정 시점에 자동 승인 처리
+  await supabaseAdmin
+    .from("match_requests")
+    .update({ is_approved: true, reviewed_at: new Date().toISOString(), reviewed_by: _user.userId })
+    .eq("id", id)
+    .eq("is_approved", false);
+
   const { data, error } = await supabaseAdmin.rpc("assign_leader_with_score", {
     p_request_id:       id,
     p_leader_id:        leaderId,

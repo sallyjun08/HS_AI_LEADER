@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useAuth, type UserRole } from "@/lib/auth-context";
@@ -17,10 +17,9 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { icon: "📋", label: "내 매칭 요청", href: "/dashboard/client" },
   ],
   admin: [
-    { icon: "📊", label: "통계",        href: "/dashboard/admin#stats" },
-    { icon: "🏅", label: "강사 관리",   href: "/admin/leaders" },
-    { icon: "🔍", label: "요청 검토",   href: "/admin/review" },
-    { icon: "🎯", label: "매칭 센터",   href: "/admin/matching-center" },
+    { icon: "📊", label: "통계",          href: "/dashboard/admin" },
+    { icon: "🏅", label: "강사 관리",     href: "/admin/leaders" },
+    { icon: "🎯", label: "매칭 센터",     href: "/admin/matching-center" },
     { icon: "📋", label: "전체 요청 현황", href: "/admin/requests" },
     { icon: "💰", label: "정산 관리",     href: "/admin/settlement" },
   ],
@@ -32,6 +31,8 @@ const ROLE_META: Record<UserRole, { label: string; badge: string; badgeStyle: st
   admin:  { label: "화성시 관리자", badge: "관리자", badgeStyle: "bg-gray-100 text-gray-700",     avatarBg: "from-gray-700 to-gray-900" },
 };
 
+type AdminAlerts = { pending: number; rejected: number; unverified: number };
+
 interface Props { pageTitle: string; children: React.ReactNode }
 
 export default function DashboardLayout({ pageTitle, children }: Props) {
@@ -39,6 +40,29 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentHash, setCurrentHash] = useState("");
+  const [adminAlerts, setAdminAlerts] = useState<AdminAlerts>({ pending: 0, rejected: 0, unverified: 0 });
+
+  const fetchAdminAlerts = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [reqs, leaders]: [any[], any[]] = await Promise.all([
+        fetch("/api/match-requests").then((r) => r.json()),
+        fetch("/api/admin/leaders/list").then((r) => r.json()),
+      ]);
+      setAdminAlerts({
+        pending:    Array.isArray(reqs)    ? reqs.filter((r) => r.status === "pending").length : 0,
+        rejected:   Array.isArray(reqs)    ? reqs.filter((r) => r.status === "rejected").length : 0,
+        unverified: Array.isArray(leaders) ? leaders.filter((l) => !l.isVerified).length : 0,
+      });
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!user || user.role !== "admin") return;
+    fetchAdminAlerts();
+    const id = setInterval(fetchAdminAlerts, 30_000);
+    return () => clearInterval(id);
+  }, [user, fetchAdminAlerts]);
 
   useEffect(() => {
     setCurrentHash(window.location.hash);
@@ -66,6 +90,15 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const navItems = NAV_BY_ROLE[role] ?? [];
   const meta = ROLE_META[role];
   const initial = userName.charAt(0);
+
+  const totalAlerts = adminAlerts.pending + adminAlerts.rejected + adminAlerts.unverified;
+
+  function navBadge(href: string): number {
+    if (role !== "admin") return 0;
+    if (href === "/admin/leaders")         return adminAlerts.unverified;
+    if (href === "/admin/matching-center") return adminAlerts.pending + adminAlerts.rejected;
+    return 0;
+  }
 
   async function handleSignOut() {
     await signOut();
@@ -97,6 +130,15 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
         <span className="text-white font-semibold text-sm truncate">{pageTitle}</span>
 
         <div className="ml-auto flex items-center gap-2">
+          {role === "admin" && totalAlerts > 0 && (
+            <div className="relative flex items-center">
+              <span className="relative flex h-2 w-2 mr-1">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+              </span>
+              <span className="text-xs font-bold text-red-300">{totalAlerts}건 처리 필요</span>
+            </div>
+          )}
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full hidden sm:block ${meta.badgeStyle}`}>
             {meta.badge}
           </span>
@@ -137,10 +179,10 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
           <nav className="flex-1 py-3 overflow-y-auto">
             {navItems.map((item) => {
               const hrefPath = item.href.split("#")[0];
-              // 해시가 있는 항목은 asPath 전체로 비교, 없는 항목은 pathname으로 비교
               const isActive = item.href.includes("#")
                 ? `${router.pathname}${currentHash}` === item.href
                 : router.pathname === hrefPath;
+              const badge = navBadge(item.href);
               return (
                 <Link
                   key={item.label}
@@ -153,8 +195,14 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
                   }`}
                 >
                   <span className="text-base w-5 text-center">{item.icon}</span>
-                  <span>{item.label}</span>
-                  {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-hwaseong-blue" />}
+                  <span className="flex-1">{item.label}</span>
+                  {badge > 0 ? (
+                    <span className="ml-auto min-w-[20px] h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1 animate-pulse">
+                      {badge}
+                    </span>
+                  ) : isActive ? (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-hwaseong-blue" />
+                  ) : null}
                 </Link>
               );
             })}

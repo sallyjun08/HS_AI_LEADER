@@ -89,21 +89,15 @@ export default function AdminDashboard() {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
   }, [loading, user, router]);
 
-  useEffect(() => {
-    if (!user) return;
-    fetch("/api/admin/leaders/list")
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setFeedLeaders(data); })
-      .catch(() => {});
-  }, [user]);
-
   async function fetchAll() {
-    const [s, rq, rp] = await Promise.all([
+    const [s, rq, rp, ld] = await Promise.all([
       fetch("/api/admin/stats").then((r) => r.json()),
       fetch("/api/match-requests").then((r) => r.json()),
       fetch("/api/activity-reports").then((r) => r.json()),
+      fetch("/api/admin/leaders/list").then((r) => r.json()),
     ]);
     setStats(s); setRequests(rq); setReports(rp);
+    if (Array.isArray(ld)) setFeedLeaders(ld);
   }
 
   useEffect(() => {
@@ -144,11 +138,11 @@ export default function AdminDashboard() {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  // is_approved가 명시적으로 false인 항목은 검토 페이지에서 처리 중 → 여기서 제외
-  const pendingRequests  = requests.filter((r) => r.status === "pending" && r.is_approved !== false);
-  const matchedRequests  = requests.filter((r) => r.status === "matched");
-  const rejectedRequests = requests.filter((r) => r.status === "rejected");
-  const ongoingCount = requests.filter((r) => r.status === "ongoing").length;
+  const pendingRequests   = requests.filter((r) => r.status === "pending");
+  const matchedRequests   = requests.filter((r) => r.status === "matched");
+  const rejectedRequests  = requests.filter((r) => r.status === "rejected");
+  const ongoingCount      = requests.filter((r) => r.status === "ongoing").length;
+  const unverifiedLeaders = feedLeaders.filter((l) => !l.isVerified);
   const todayReports = reports.filter((r) => {
     const today = new Date().toDateString();
     return new Date(r.submitted_at).toDateString() === today;
@@ -158,6 +152,89 @@ export default function AdminDashboard() {
     <>
       <Head><title>관리자 대시보드 | 화성 AI 시민리더 잇다</title></Head>
       <DashboardLayout pageTitle="통합 관제 대시보드">
+
+        {/* 알림 현황 패널 */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            {
+              count: rejectedRequests.length,
+              label: "재배정 필요",
+              sub: "강사 거절 → 즉시 재매칭",
+              href: "/admin/matching-center",
+              urgent: true,
+              activeColor: "bg-red-500",
+              activeBorder: "border-red-300",
+              activeBg: "bg-red-50",
+              activeText: "text-red-700",
+              activeSub: "text-red-400",
+              icon: "⚠️",
+            },
+            {
+              count: pendingRequests.length,
+              label: "강의 요청 대기",
+              sub: "강사 배정이 필요합니다",
+              href: "/admin/matching-center",
+              urgent: false,
+              activeColor: "bg-amber-500",
+              activeBorder: "border-amber-300",
+              activeBg: "bg-amber-50",
+              activeText: "text-amber-700",
+              activeSub: "text-amber-400",
+              icon: "📥",
+            },
+            {
+              count: unverifiedLeaders.length,
+              label: "강사 인증 대기",
+              sub: "자격증 검토 후 인증 처리",
+              href: "/admin/leaders",
+              urgent: false,
+              activeColor: "bg-hwaseong-blue",
+              activeBorder: "border-blue-300",
+              activeBg: "bg-blue-50",
+              activeText: "text-blue-700",
+              activeSub: "text-blue-400",
+              icon: "🏅",
+            },
+          ].map((item) => {
+            const hasAlert = item.count > 0;
+            return (
+              <a
+                key={item.label}
+                href={item.href}
+                className={`relative flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all hover:shadow-md ${
+                  hasAlert
+                    ? `${item.activeBg} ${item.activeBorder} shadow-sm`
+                    : "bg-white border-gray-100"
+                }`}
+              >
+                {hasAlert && item.urgent && (
+                  <span className="absolute top-2 right-2 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                  </span>
+                )}
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
+                  hasAlert ? item.activeColor : "bg-gray-100"
+                }`}>
+                  {hasAlert ? (
+                    <span className="text-white font-black text-sm">{item.count}</span>
+                  ) : (
+                    <span>{item.icon}</span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-xs font-bold leading-tight ${hasAlert ? item.activeText : "text-gray-400"}`}>
+                    {item.label}
+                  </p>
+                  <p className={`text-[10px] mt-0.5 ${hasAlert ? item.activeSub : "text-gray-300"}`}>
+                    {hasAlert ? item.sub : "처리할 항목 없음"}
+                  </p>
+                </div>
+                {hasAlert && <span className={`ml-auto text-xs flex-shrink-0 ${item.activeText}`}>→</span>}
+              </a>
+            );
+          })}
+        </div>
 
         {/* 관리자 헤더 */}
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl p-6 flex items-center gap-5">
@@ -418,7 +495,7 @@ export default function AdminDashboard() {
               </div>
               <div className="grid grid-cols-3 divide-x divide-gray-100">
                 {[
-                  { label: "검토 대기",   count: pendingRequests.length,  icon: "📥", bg: "bg-amber-50",  text: "text-amber-700",  href: "/admin/review",           urgent: pendingRequests.length > 0 },
+                  { label: "강의 요청",   count: pendingRequests.length,  icon: "📥", bg: "bg-amber-50",  text: "text-amber-700",  href: "/admin/matching-center",  urgent: pendingRequests.length > 0 },
                   { label: "수락 대기",   count: matchedRequests.length,  icon: "⏳", bg: "bg-sky-50",    text: "text-sky-700",    href: "/admin/requests",         urgent: false },
                   { label: "재배정 필요", count: rejectedRequests.length, icon: "⚠️", bg: "bg-red-50",    text: "text-red-700",    href: "/admin/matching-center",  urgent: rejectedRequests.length > 0 },
                 ].map((s) => (

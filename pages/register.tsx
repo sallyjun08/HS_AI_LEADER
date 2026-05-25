@@ -41,11 +41,25 @@ const ROLES: {
   },
 ];
 
+const SPECIALTY_GROUPS = [
+  { group: "AI 기초·윤리",     items: ["생성형 AI", "ChatGPT 활용", "AI 윤리", "AI 리터러시", "미디어 리터러시"] },
+  { group: "프로그래밍·데이터", items: ["파이썬 기초", "데이터 분석", "코딩 기초", "노코드 도구", "엑셀·자동화"] },
+  { group: "창의·융합",         items: ["메이커 교육", "로봇 코딩", "AI 예술", "SW 융합", "디지털 리터러시"] },
+  { group: "비즈니스·실무",     items: ["AI 업무 혁신", "챗봇 활용", "영상 제작", "소셜미디어", "AI 마케팅"] },
+];
+
+const REGION_ZONES = [
+  { zone: "동부권", items: ["동탄1동", "동탄2동", "동탄면", "기흥"] },
+  { zone: "남부권", items: ["봉담읍", "향남읍", "발안", "팔탄면"] },
+  { zone: "서부권", items: ["남양읍", "마도면", "서신면", "우정읍", "장안면"] },
+  { zone: "북부권", items: ["병점동", "기산동", "안녕동", "진안동"] },
+];
+
 export default function RegisterPage() {
   const router = useRouter();
   const ORG_TYPES = ["초등학교", "중학교", "고등학교", "대학교", "구청/주민센터", "기업", "복지관", "도서관", "기타"];
 
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<number>(1);
   const [role, setRole] = useState<Role | null>(null);
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", orgName: "", orgType: "", orgTypeCustom: "" });
   const [emailStatus, setEmailStatus] = useState<"idle" | "checking" | "ok" | "taken">("idle");
@@ -53,6 +67,12 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certPreview, setCertPreview] = useState<string | null>(null);
+  const [certUploadStatus, setCertUploadStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [certImageUrl, setCertImageUrl] = useState<string | null>(null);
+  const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>([]);
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error" | "rate_limit">("idle");
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -91,14 +111,81 @@ export default function RegisterPage() {
     setEmailStatus(data.available ? "ok" : "taken");
   }
 
+  function handleNextStep() {
+    setError(null);
+    if (step === 2) {
+      if (!form.name.trim()) return setError("이름을 입력해 주세요.");
+      if (emailStatus !== "ok") return setError("이메일 중복 확인을 해주세요.");
+      if (form.password.length < 6) return setError("비밀번호는 6자 이상이어야 합니다.");
+      if (form.password !== form.confirm) return setError("비밀번호가 일치하지 않습니다.");
+    }
+    setStep((s) => s + 1);
+  }
+
+  function handleCertFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("이미지 파일만 업로드 가능합니다.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("파일 크기는 8MB 이하여야 합니다.");
+      return;
+    }
+    setCertFile(file);
+    setCertImageUrl(null);
+    setCertUploadStatus("idle");
+    const reader = new FileReader();
+    reader.onload = (ev) => setCertPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function uploadCertImage(): Promise<string | null> {
+    if (!certFile) return null;
+    setCertUploadStatus("uploading");
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const base64 = (ev.target?.result as string).split(",")[1];
+        const res = await fetch("/api/auth/upload-cert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: certFile.name, mimeType: certFile.type, data: base64 }),
+        });
+        if (res.ok) {
+          const { url } = await res.json();
+          setCertImageUrl(url);
+          setCertUploadStatus("done");
+          resolve(url);
+        } else {
+          setCertUploadStatus("error");
+          resolve(null);
+        }
+      };
+      reader.readAsDataURL(certFile);
+    });
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!role) return;
     if (emailStatus !== "ok") return setError("이메일 중복 확인을 해주세요.");
     if (form.password.length < 6) return setError("비밀번호는 6자 이상이어야 합니다.");
     if (form.password !== form.confirm) return setError("비밀번호가 일치하지 않습니다.");
+    if (role === "leader" && !certFile && !certImageUrl) return setError("AI 시민 리더 교육 인증서를 업로드해 주세요.");
     setError(null);
     setSubmitting(true);
+
+    let uploadedCertUrl = certImageUrl;
+    if (role === "leader" && certFile && !certImageUrl) {
+      uploadedCertUrl = await uploadCertImage();
+      if (!uploadedCertUrl) {
+        setError("인증서 이미지 업로드에 실패했습니다. 다시 시도해 주세요.");
+        setSubmitting(false);
+        return;
+      }
+    }
 
     const res = await fetch("/api/auth/register", {
       method: "POST",
@@ -108,6 +195,11 @@ export default function RegisterPage() {
         ...(role === "client" ? {
           orgName: form.orgName,
           orgType: form.orgType === "기타" ? (form.orgTypeCustom.trim() || "기타") : (form.orgType || null),
+        } : {}),
+        ...(role === "leader" ? {
+          ...(uploadedCertUrl ? { certImageUrl: uploadedCertUrl } : {}),
+          specialties: selectedSpecialties,
+          availableRegions: selectedRegions,
         } : {}),
       }),
     });
@@ -280,21 +372,34 @@ export default function RegisterPage() {
         </Link>
 
         {/* 진행 단계 */}
-        <div className="flex items-center gap-2 mb-8">
-          {[1, 2].map((s) => (
-            <div key={s} className="flex items-center gap-2">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${
-                step >= s ? "bg-white text-hwaseong-blue" : "bg-white/20 text-white/50"
-              }`}>
-                {s}
-              </div>
-              {s < 2 && <div className={`w-12 h-0.5 rounded transition-all duration-300 ${step >= 2 ? "bg-white" : "bg-white/20"}`} />}
+        {(() => {
+          const labels = role === "leader"
+            ? ["역할 선택", "기본 정보", "전문분야·지역", "인증서"]
+            : ["역할 선택", "정보 입력"];
+          const total = labels.length;
+          return (
+            <div className="flex items-center gap-2 mb-8">
+              {labels.map((label, i) => {
+                const s = i + 1;
+                return (
+                  <div key={s} className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${
+                      step > s ? "bg-white text-green-600" :
+                      step === s ? "bg-white text-hwaseong-blue" :
+                      "bg-white/20 text-white/50"
+                    }`}>
+                      {step > s ? "✓" : s}
+                    </div>
+                    {s < total && (
+                      <div className={`w-8 h-0.5 rounded transition-all duration-300 ${step > s ? "bg-white" : "bg-white/20"}`} />
+                    )}
+                  </div>
+                );
+              })}
+              <span className="ml-2 text-blue-200 text-xs">{labels[step - 1] ?? ""}</span>
             </div>
-          ))}
-          <span className="ml-2 text-blue-200 text-xs">
-            {step === 1 ? "역할 선택" : "정보 입력"}
-          </span>
-        </div>
+          );
+        })()}
 
         {/* ── STEP 1: 역할 선택 ── */}
         <div className={`w-full max-w-2xl transition-all duration-300 ${step === 1 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none absolute"}`}>
@@ -346,14 +451,14 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        {/* ── STEP 2: 정보 입력 ── */}
-        {step === 2 && selectedRole && (
+        {/* ── STEP 2~4: 정보 입력 (멀티스텝) ── */}
+        {step >= 2 && selectedRole && (
           <div className="w-full max-w-md animate-in fade-in slide-in-from-bottom-4 duration-300">
             <div className="bg-white rounded-3xl shadow-2xl p-8">
 
-              {/* 선택된 역할 표시 */}
-              <div className={`flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-r ${selectedRole.gradient} mb-6`}>
-                <span className="text-2xl">{selectedRole.icon}</span>
+              {/* 역할 뱃지 */}
+              <div className={`flex items-center gap-3 p-3.5 rounded-2xl bg-gradient-to-r ${selectedRole.gradient} mb-6`}>
+                <span className="text-xl">{selectedRole.icon}</span>
                 <div>
                   <p className="text-white font-bold text-sm">{selectedRole.subtitle}</p>
                   <p className="text-white/70 text-xs">로 가입합니다</p>
@@ -366,148 +471,291 @@ export default function RegisterPage() {
                 </button>
               </div>
 
-              <h1 className="text-xl font-black text-hwaseong-text mb-1">정보를 입력해 주세요</h1>
-              <p className="text-sm text-gray-400 mb-6">가입 후 대시보드에서 추가 정보를 작성할 수 있습니다.</p>
+              {/* 단계별 타이틀 */}
+              <h1 className="text-xl font-black text-hwaseong-text mb-1">
+                {role === "leader"
+                  ? step === 2 ? "기본 정보를 입력해 주세요"
+                    : step === 3 ? "활동 분야와 지역을 선택해 주세요"
+                    : "AI 교육 인증서를 업로드해 주세요"
+                  : "정보를 입력해 주세요"}
+              </h1>
+              <p className="text-sm text-gray-400 mb-6">
+                {step === 2
+                  ? role === "client"
+                    ? "가입 후 대시보드에서 추가 정보를 작성할 수 있습니다."
+                    : "이름, 이메일, 비밀번호를 입력합니다."
+                  : "선택 항목입니다. 나중에 프로필에서 수정할 수 있습니다."}
+              </p>
 
               <form onSubmit={handleSubmit} className="space-y-4">
-                {/* 수요처 전용: 기관명 + 기관 유형 */}
-                {role === "client" && (
+
+                {/* ── STEP 2: 기본 정보 ── */}
+                {step === 2 && (
                   <>
+                    {/* 수요처 전용: 기관명 + 기관 유형 */}
+                    {role === "client" && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                            기관명 <span className="text-red-400">*</span>
+                          </label>
+                          <input
+                            type="text" value={form.orgName}
+                            onChange={(e) => update("orgName", e.target.value)}
+                            placeholder="예: 동탄초등학교, 화성시청" required
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 mb-1.5">기관 유형</label>
+                          <select
+                            value={form.orgType}
+                            onChange={(e) => update("orgType", e.target.value)}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors bg-white text-gray-700"
+                          >
+                            <option value="">선택 안 함</option>
+                            {ORG_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          {form.orgType === "기타" && (
+                            <input
+                              type="text"
+                              value={form.orgTypeCustom}
+                              onChange={(e) => update("orgTypeCustom", e.target.value)}
+                              placeholder="기관 유형을 직접 입력해 주세요"
+                              className="mt-2 w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors"
+                            />
+                          )}
+                        </div>
+                        <div className="border-t border-gray-100" />
+                      </>
+                    )}
+
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                        기관명 <span className="text-red-400">*</span>
+                        이름{role === "client" ? " (담당자)" : ""}
                       </label>
                       <input
-                        type="text" value={form.orgName}
-                        onChange={(e) => update("orgName", e.target.value)}
-                        placeholder="예: 동탄초등학교, 화성시청" required
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors"
+                        type="text" value={form.name}
+                        onChange={(e) => update("name", e.target.value)}
+                        placeholder="홍길동" required
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
                       />
                     </div>
+
                     <div>
-                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">기관 유형</label>
-                      <select
-                        value={form.orgType}
-                        onChange={(e) => update("orgType", e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors bg-white text-gray-700"
-                      >
-                        <option value="">선택 안 함</option>
-                        {ORG_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      {form.orgType === "기타" && (
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">이메일</label>
+                      <div className="flex gap-2">
                         <input
-                          type="text"
-                          value={form.orgTypeCustom}
-                          onChange={(e) => update("orgTypeCustom", e.target.value)}
-                          placeholder="기관 유형을 직접 입력해 주세요"
-                          className="mt-2 w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors"
+                          type="email" value={form.email}
+                          onChange={(e) => update("email", e.target.value)}
+                          placeholder="example@email.com" required autoComplete="email"
+                          className={`flex-1 px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
+                            emailStatus === "ok"    ? "border-green-400 focus:ring-green-200" :
+                            emailStatus === "taken" ? "border-red-400 focus:ring-red-200" :
+                            "border-gray-200 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue"
+                          }`}
                         />
+                        <button
+                          type="button" onClick={checkEmail}
+                          disabled={!form.email || emailStatus === "checking"}
+                          className="px-4 py-3 bg-hwaseong-blue hover:bg-blue-900 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
+                        >
+                          {emailStatus === "checking" ? "확인 중…" : "중복확인"}
+                        </button>
+                      </div>
+                      {emailStatus === "ok" && (
+                        <p className="flex items-center gap-1 text-green-600 text-xs mt-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> 사용 가능한 이메일입니다.
+                        </p>
+                      )}
+                      {emailStatus === "taken" && (
+                        <p className="flex items-center gap-1 text-red-500 text-xs mt-1.5">
+                          <XCircle className="w-3.5 h-3.5" /> 이미 사용 중인 이메일입니다.
+                        </p>
                       )}
                     </div>
-                    <div className="border-t border-gray-100 pt-1" />
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">비밀번호</label>
+                      <div className="relative">
+                        <input
+                          type={showPw ? "text" : "password"} value={form.password}
+                          onChange={(e) => update("password", e.target.value)}
+                          placeholder="6자 이상" required autoComplete="new-password"
+                          className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
+                        />
+                        <button
+                          type="button" onClick={() => setShowPw((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                          aria-label={showPw ? "비밀번호 숨기기" : "비밀번호 보기"}
+                        >
+                          {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">비밀번호 확인</label>
+                      <div className="relative">
+                        <input
+                          type={showConfirm ? "text" : "password"} value={form.confirm}
+                          onChange={(e) => update("confirm", e.target.value)}
+                          placeholder="비밀번호 재입력" required autoComplete="new-password"
+                          className={`w-full px-4 py-3 pr-11 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
+                            form.confirm && form.password !== form.confirm ? "border-red-400 focus:ring-red-200" :
+                            form.confirm && form.password === form.confirm ? "border-green-400 focus:ring-green-200" :
+                            "border-gray-200 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue"
+                          }`}
+                        />
+                        <button
+                          type="button" onClick={() => setShowConfirm((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                          aria-label={showConfirm ? "비밀번호 숨기기" : "비밀번호 보기"}
+                        >
+                          {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {form.confirm && form.password !== form.confirm && (
+                        <p className="flex items-center gap-1 text-red-500 text-xs mt-1.5">
+                          <XCircle className="w-3.5 h-3.5" /> 비밀번호가 일치하지 않습니다.
+                        </p>
+                      )}
+                      {form.confirm && form.password === form.confirm && (
+                        <p className="flex items-center gap-1 text-green-600 text-xs mt-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> 비밀번호가 일치합니다.
+                        </p>
+                      )}
+                    </div>
                   </>
                 )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    이름{role === "client" ? " (담당자)" : ""}
-                  </label>
-                  <input
-                    type="text" value={form.name}
-                    onChange={(e) => update("name", e.target.value)}
-                    placeholder="홍길동" required
-                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
-                  />
-                </div>
+                {/* ── STEP 3 (강사): 전문 분야 + 활동 지역 ── */}
+                {step === 3 && role === "leader" && (
+                  <>
+                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-base">🎯</span>
+                        <span className="text-sm font-bold text-indigo-900">전문 분야</span>
+                        <span className="text-[11px] text-indigo-400 font-normal">복수 가능</span>
+                        {selectedSpecialties.length > 0 && (
+                          <span className="ml-auto text-[11px] bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-full">
+                            {selectedSpecialties.length}개 선택
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-2.5">
+                        {SPECIALTY_GROUPS.map(({ group, items }) => (
+                          <div key={group}>
+                            <p className="text-[10px] text-indigo-400 font-semibold mb-1">{group}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {items.map((item) => {
+                                const active = selectedSpecialties.includes(item);
+                                return (
+                                  <button
+                                    key={item} type="button"
+                                    onClick={() =>
+                                      setSelectedSpecialties((prev) =>
+                                        active ? prev.filter((s) => s !== item) : [...prev, item]
+                                      )
+                                    }
+                                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                                      active
+                                        ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                                        : "bg-white border-indigo-200 text-indigo-500 hover:border-indigo-400 hover:bg-indigo-100"
+                                    }`}
+                                  >
+                                    {item}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
 
-                {/* 이메일 + 중복확인 */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">이메일</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="email" value={form.email}
-                      onChange={(e) => update("email", e.target.value)}
-                      placeholder="example@email.com" required autoComplete="email"
-                      className={`flex-1 px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
-                        emailStatus === "ok"    ? "border-green-400 focus:ring-green-200" :
-                        emailStatus === "taken" ? "border-red-400 focus:ring-red-200" :
-                        "border-gray-200 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue"
-                      }`}
-                    />
-                    <button
-                      type="button" onClick={checkEmail}
-                      disabled={!form.email || emailStatus === "checking"}
-                      className="px-4 py-3 bg-hwaseong-blue hover:bg-blue-900 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-colors whitespace-nowrap"
-                    >
-                      {emailStatus === "checking" ? "확인 중…" : "중복확인"}
-                    </button>
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-base">📍</span>
+                        <span className="text-sm font-bold text-blue-900">활동 가능 지역</span>
+                        <span className="text-[11px] text-blue-400 font-normal">복수 가능</span>
+                        {selectedRegions.length > 0 && (
+                          <span className="ml-auto text-[11px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full">
+                            {selectedRegions.length}개 선택
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-2.5">
+                        {REGION_ZONES.map(({ zone, items }) => (
+                          <div key={zone}>
+                            <p className="text-[10px] text-blue-400 font-semibold mb-1">{zone}</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {items.map((item) => {
+                                const active = selectedRegions.includes(item);
+                                return (
+                                  <button
+                                    key={item} type="button"
+                                    onClick={() =>
+                                      setSelectedRegions((prev) =>
+                                        active ? prev.filter((r) => r !== item) : [...prev, item]
+                                      )
+                                    }
+                                    className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                                      active
+                                        ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                                        : "bg-white border-blue-200 text-blue-500 hover:border-blue-400 hover:bg-blue-100"
+                                    }`}
+                                  >
+                                    {item}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* ── STEP 4 (강사): 교육 인증서 ── */}
+                {step === 4 && role === "leader" && (
+                  <div>
+                    {certPreview ? (
+                      <div className="relative rounded-2xl overflow-hidden border border-indigo-200 bg-indigo-50">
+                        <img src={certPreview} alt="인증서 미리보기" className="w-full max-h-64 object-contain" />
+                        <button
+                          type="button"
+                          onClick={() => { setCertFile(null); setCertPreview(null); setCertImageUrl(null); setCertUploadStatus("idle"); }}
+                          className="absolute top-2 right-2 w-7 h-7 bg-black/50 hover:bg-black/70 text-white rounded-full text-xs flex items-center justify-center transition-colors"
+                        >
+                          ✕
+                        </button>
+                        {certUploadStatus === "done" && (
+                          <div className="absolute bottom-2 left-2 bg-green-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                            ✓ 업로드 완료
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center gap-3 w-full h-48 border-2 border-dashed border-gray-200 hover:border-indigo-400 rounded-2xl cursor-pointer bg-gray-50 hover:bg-indigo-50 transition-colors group">
+                        <span className="text-4xl group-hover:scale-110 transition-transform">📄</span>
+                        <div className="text-center">
+                          <p className="text-sm text-gray-500 group-hover:text-indigo-600 transition-colors font-medium">
+                            클릭하여 인증서 이미지 선택
+                          </p>
+                          <p className="text-xs text-gray-300 mt-1">JPG, PNG, WEBP · 최대 8MB</p>
+                        </div>
+                        <input type="file" accept="image/*" onChange={handleCertFileChange} className="hidden" />
+                      </label>
+                    )}
+                    <p className="text-xs text-red-400 mt-3 text-center font-medium">
+                      수료증 업로드는 필수입니다.
+                    </p>
                   </div>
-                  {emailStatus === "ok" && (
-                    <p className="flex items-center gap-1 text-green-600 text-xs mt-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> 사용 가능한 이메일입니다.
-                    </p>
-                  )}
-                  {emailStatus === "taken" && (
-                    <p className="flex items-center gap-1 text-red-500 text-xs mt-1.5">
-                      <XCircle className="w-3.5 h-3.5" /> 이미 사용 중인 이메일입니다.
-                    </p>
-                  )}
-                </div>
+                )}
 
-                {/* 비밀번호 */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">비밀번호</label>
-                  <div className="relative">
-                    <input
-                      type={showPw ? "text" : "password"} value={form.password}
-                      onChange={(e) => update("password", e.target.value)}
-                      placeholder="6자 이상" required autoComplete="new-password"
-                      className="w-full px-4 py-3 pr-11 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
-                    />
-                    <button
-                      type="button" onClick={() => setShowPw((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                      aria-label={showPw ? "비밀번호 숨기기" : "비밀번호 보기"}
-                    >
-                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* 비밀번호 확인 */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">비밀번호 확인</label>
-                  <div className="relative">
-                    <input
-                      type={showConfirm ? "text" : "password"} value={form.confirm}
-                      onChange={(e) => update("confirm", e.target.value)}
-                      placeholder="비밀번호 재입력" required autoComplete="new-password"
-                      className={`w-full px-4 py-3 pr-11 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
-                        form.confirm && form.password !== form.confirm ? "border-red-400 focus:ring-red-200" :
-                        form.confirm && form.password === form.confirm ? "border-green-400 focus:ring-green-200" :
-                        "border-gray-200 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue"
-                      }`}
-                    />
-                    <button
-                      type="button" onClick={() => setShowConfirm((v) => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                      aria-label={showConfirm ? "비밀번호 숨기기" : "비밀번호 보기"}
-                    >
-                      {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {form.confirm && form.password !== form.confirm && (
-                    <p className="flex items-center gap-1 text-red-500 text-xs mt-1.5">
-                      <XCircle className="w-3.5 h-3.5" /> 비밀번호가 일치하지 않습니다.
-                    </p>
-                  )}
-                  {form.confirm && form.password === form.confirm && (
-                    <p className="flex items-center gap-1 text-green-600 text-xs mt-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> 비밀번호가 일치합니다.
-                    </p>
-                  )}
-                </div>
-
+                {/* 에러 */}
                 {error && (
                   <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-xl flex items-start gap-2">
                     <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -517,17 +765,39 @@ export default function RegisterPage() {
                   </div>
                 )}
 
-                <button
-                  type="submit" disabled={submitting}
-                  className="w-full py-3.5 bg-hwaseong-blue hover:bg-blue-900 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl transition-colors shadow-md"
-                >
-                  {submitting ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                      가입 중...
-                    </span>
-                  ) : "가입하기"}
-                </button>
+                {/* 하단 버튼 */}
+                <div className={`flex gap-2 ${step > 2 ? "" : ""}`}>
+                  {step > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => { setStep((s) => s - 1); setError(null); }}
+                      className="flex-1 py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-sm rounded-xl transition-colors"
+                    >
+                      ← 이전
+                    </button>
+                  )}
+                  {role === "leader" && step < 4 ? (
+                    <button
+                      type="button"
+                      onClick={handleNextStep}
+                      className="flex-1 py-3.5 bg-hwaseong-blue hover:bg-blue-900 text-white font-bold text-sm rounded-xl transition-colors shadow-md"
+                    >
+                      다음 →
+                    </button>
+                  ) : (
+                    <button
+                      type="submit" disabled={submitting}
+                      className="flex-1 py-3.5 bg-hwaseong-blue hover:bg-blue-900 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl transition-colors shadow-md"
+                    >
+                      {submitting ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                          가입 중...
+                        </span>
+                      ) : "가입하기"}
+                    </button>
+                  )}
+                </div>
               </form>
 
               <div className="mt-5 pt-5 border-t border-gray-100 text-center">

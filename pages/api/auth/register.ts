@@ -8,9 +8,10 @@ type Role = (typeof VALID_ROLES)[number];
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { email, password, name, role, orgName, orgType } = req.body as {
+  const { email, password, name, role, orgName, orgType, certImageUrl, specialties, availableRegions } = req.body as {
     email: string; password: string; name: string; role: string;
-    orgName?: string; orgType?: string;
+    orgName?: string; orgType?: string; certImageUrl?: string;
+    specialties?: string[]; availableRegions?: string[];
   };
 
   if (!email || !password || !name || !VALID_ROLES.includes(role as Role)) {
@@ -57,7 +58,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (role === "leader") {
     await supabaseAdmin
       .from("leader_profiles")
-      .upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
+      .upsert(
+        {
+          user_id: userId,
+          ...(certImageUrl ? { cert_image_url: certImageUrl } : {}),
+          ...(Array.isArray(specialties) && specialties.length > 0 ? { specialties } : {}),
+          ...(Array.isArray(availableRegions) && availableRegions.length > 0 ? { available_regions: availableRegions } : {}),
+        },
+        { onConflict: "user_id", ignoreDuplicates: false }
+      );
   }
 
   // session이 없으면 이메일 인증 필요, 있으면 자동 인증(개발 환경 등)

@@ -7,12 +7,17 @@ import Link from "next/link";
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
 
+type LectureTimeSlot = { type?: string; day?: string; start?: string; end?: string; date?: string };
+
 type MatchRequest = {
   id: string;
   title: string;
   category: string;
+  lecture_type: "oneday" | "intensive" | "longterm" | null;
+  lecture_times: LectureTimeSlot[] | null;
   target_age: string | null;
   participant_count: number;
+  session_count: number | null;
   start_date: string;
   address: string | null;
   status: string;
@@ -21,6 +26,16 @@ type MatchRequest = {
   updated_at?: string;
   client: { name: string; email: string } | null;
   leader: { maskedName: string; realName?: string } | null;
+};
+
+const DAY_LABELS: Record<string, string> = {
+  mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
+};
+
+const LECTURE_TYPE_META: Record<string, { emoji: string; label: string; bg: string; text: string }> = {
+  oneday:    { emoji: "⚡", label: "원데이형",   bg: "bg-amber-50",  text: "text-amber-700"  },
+  intensive: { emoji: "📚", label: "집중코스형", bg: "bg-blue-50",   text: "text-blue-700"   },
+  longterm:  { emoji: "📅", label: "장기정기형", bg: "bg-purple-50", text: "text-purple-700" },
 };
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
@@ -249,6 +264,14 @@ export default function AdminRequestsPage() {
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${meta?.bg ?? "bg-gray-100"} ${meta?.text ?? "text-gray-600"}`}>
                           {meta?.label ?? req.status}
                         </span>
+                        {req.lecture_type && LECTURE_TYPE_META[req.lecture_type] && (() => {
+                          const lt = LECTURE_TYPE_META[req.lecture_type!]!;
+                          return (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${lt.bg} ${lt.text}`}>
+                              {lt.emoji} {lt.label}
+                            </span>
+                          );
+                        })()}
                         <p className="font-semibold text-hwaseong-text text-sm truncate">{req.title}</p>
                       </div>
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500 mt-1">
@@ -257,12 +280,24 @@ export default function AdminRequestsPage() {
                         <span>📅 {req.start_date}</span>
                         <span>👥 {req.participant_count}명</span>
                         <span>🎯 {req.category}</span>
+                        {req.session_count != null && req.session_count > 1 && (
+                          <span>🔁 {req.session_count}회차</span>
+                        )}
                         {req.leader && (
                           <span className="text-blue-500 font-medium">
                             🏅 {req.leader.realName ?? req.leader.maskedName}
                           </span>
                         )}
                       </div>
+                      {req.lecture_type === "longterm" && req.lecture_times && req.lecture_times.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {req.lecture_times.filter((s) => s.type === "recurring" && s.day).map((s) => (
+                            <span key={s.day} className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-medium">
+                              {DAY_LABELS[s.day!] ?? s.day} {s.start}~{s.end}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[10px] text-gray-300">등록 {fmtDate(req.created_at)}</span>
                         {isRejected && (

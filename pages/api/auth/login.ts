@@ -11,6 +11,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // 인증 전용 클라이언트 사용 (supabaseAdmin 세션 오염 방지)
   const { data, error } = await createAuthClient().auth.signInWithPassword({ email, password });
   if (error || !data.session) {
+    if (error?.message.toLowerCase().includes("email not confirmed")) {
+      return res.status(403).json({ error: "이메일 인증이 완료되지 않았습니다.", unverified: true, email });
+    }
     return res.status(401).json({ error: "이메일 또는 비밀번호가 올바르지 않습니다." });
   }
 

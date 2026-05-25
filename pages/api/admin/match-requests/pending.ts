@@ -15,7 +15,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       institution_type, address, start_date, end_date,
       notes, frequency, location_type, status,
       is_approved, cancel_reason, reviewed_at, created_at,
-      client:profiles!match_requests_client_id_fkey(name, email)
+      client:profiles!match_requests_client_id_fkey(name, email, org_name, org_type)
     `)
     .eq("status", "pending")
     .eq("is_approved", false)

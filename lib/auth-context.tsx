@@ -8,6 +8,8 @@ export interface AuthUser {
   email: string;
   name: string;
   role: UserRole;
+  orgName?: string | null;
+  orgType?: string | null;
   leaderProfile?: {
     id: string;
     isVerified: boolean;

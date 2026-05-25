@@ -19,6 +19,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   admin: [
     { icon: "📊", label: "통계",          href: "/dashboard/admin" },
     { icon: "🏅", label: "강사 관리",     href: "/admin/leaders" },
+    { icon: "🔍", label: "요청 검토",     href: "/admin/review" },
     { icon: "🎯", label: "매칭 센터",     href: "/admin/matching-center" },
     { icon: "📋", label: "전체 요청 현황", href: "/admin/requests" },
     { icon: "💰", label: "정산 관리",     href: "/admin/settlement" },
@@ -31,7 +32,7 @@ const ROLE_META: Record<UserRole, { label: string; badge: string; badgeStyle: st
   admin:  { label: "화성시 관리자", badge: "관리자", badgeStyle: "bg-gray-100 text-gray-700",     avatarBg: "from-gray-700 to-gray-900" },
 };
 
-type AdminAlerts = { pending: number; rejected: number; unverified: number };
+type AdminAlerts = { reviewing: number; pending: number; rejected: number; unverified: number };
 
 interface Props { pageTitle: string; children: React.ReactNode }
 
@@ -40,7 +41,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentHash, setCurrentHash] = useState("");
-  const [adminAlerts, setAdminAlerts] = useState<AdminAlerts>({ pending: 0, rejected: 0, unverified: 0 });
+  const [adminAlerts, setAdminAlerts] = useState<AdminAlerts>({ reviewing: 0, pending: 0, rejected: 0, unverified: 0 });
 
   const fetchAdminAlerts = useCallback(async () => {
     try {
@@ -50,7 +51,8 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
         fetch("/api/admin/leaders/list").then((r) => r.json()),
       ]);
       setAdminAlerts({
-        pending:    Array.isArray(reqs)    ? reqs.filter((r) => r.status === "pending").length : 0,
+        reviewing:  Array.isArray(reqs)    ? reqs.filter((r) => r.status === "pending" && r.is_approved === false).length : 0,
+        pending:    Array.isArray(reqs)    ? reqs.filter((r) => r.status === "pending" && r.is_approved === true).length : 0,
         rejected:   Array.isArray(reqs)    ? reqs.filter((r) => r.status === "rejected").length : 0,
         unverified: Array.isArray(leaders) ? leaders.filter((l) => !l.isVerified).length : 0,
       });
@@ -91,11 +93,12 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const meta = ROLE_META[role];
   const initial = userName.charAt(0);
 
-  const totalAlerts = adminAlerts.pending + adminAlerts.rejected + adminAlerts.unverified;
+  const totalAlerts = adminAlerts.reviewing + adminAlerts.pending + adminAlerts.rejected + adminAlerts.unverified;
 
   function navBadge(href: string): number {
     if (role !== "admin") return 0;
     if (href === "/admin/leaders")         return adminAlerts.unverified;
+    if (href === "/admin/review")          return adminAlerts.reviewing;
     if (href === "/admin/matching-center") return adminAlerts.pending + adminAlerts.rejected;
     return 0;
   }

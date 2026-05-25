@@ -16,9 +16,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       institution_type, address, start_date, notes,
       frequency, location_type, status, is_approved,
       prev_leader_id, created_at, updated_at,
-      client:profiles!match_requests_client_id_fkey(name, email)
+      client:profiles!match_requests_client_id_fkey(name, email, org_name, org_type)
     `)
-    .in("status", ["pending", "rejected"])
+    .or("status.eq.rejected,and(status.eq.pending,is_approved.eq.true)")
     .order("status", { ascending: false })   // rejected(r) > pending(p)
     .order("created_at", { ascending: true });
 

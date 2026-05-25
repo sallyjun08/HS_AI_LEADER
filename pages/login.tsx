@@ -29,7 +29,7 @@ const ROLE_CONFIG: Record<LoginRole, {
 };
 
 export default function LoginPage() {
-  const { user, loading, signIn } = useAuth();
+  const { user, loading, signIn: _signIn, refresh } = useAuth();
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedRole, setSelectedRole] = useState<LoginRole | null>(null);
@@ -38,13 +38,23 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error" | "rate_limit">("idle");
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [editEmailValue, setEditEmailValue] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   useEffect(() => {
     if (!loading && user) {
-      const map = { leader: "/dashboard/leader", client: "/dashboard/client", admin: "/dashboard/admin" };
-      router.replace(map[user.role] ?? "/");
+      router.replace("/");
     }
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   function pickRole(role: LoginRole) {
     setSelectedRole(role);
@@ -63,11 +73,144 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const { error: loginError } = await signIn(email, password, selectedRole ?? undefined);
-      if (loginError) setError(loginError);
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, role: selectedRole }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if ((data as { unverified?: boolean }).unverified) {
+          setUnverifiedEmail((data as { email?: string }).email ?? email);
+          return;
+        }
+        setError((data as { error?: string }).error ?? "로그인에 실패했습니다.");
+        return;
+      }
+      // 로그인 성공 — auth context 갱신 (쿠키는 이미 서버에서 세팅됨)
+      await refresh();
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleResend(targetEmail?: string) {
+    const sendTo = targetEmail ?? unverifiedEmail;
+    if (!sendTo || resendStatus === "sending") return;
+    setResendStatus("sending");
+    const res = await fetch("/api/auth/resend-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: sendTo }),
+    });
+    if (res.ok) {
+      if (targetEmail) setUnverifiedEmail(targetEmail);
+      setEditingEmail(false);
+      setResendStatus("sent");
+    } else {
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setResendStatus("rate_limit");
+        setResendCooldown(60);
+      } else {
+        setResendStatus("error");
+      }
+      if (res.status !== 429) console.error(data);
+    }
+  }
+
+  // 이메일 미인증 화면
+  if (unverifiedEmail) {
+    return (
+      <>
+        <Head>
+          <title>이메일 인증 필요 — 화성 AI 시민리더 잇다(IT-DA)</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+        </Head>
+        <div className="min-h-screen bg-gradient-to-br from-[#001845] via-[#004C97] to-[#003d7a] flex flex-col items-center justify-center px-4 py-12">
+          <Link href="/" className="inline-flex items-center gap-3 mb-8 group">
+            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+              <span className="text-hwaseong-blue font-extrabold text-[9px] leading-tight text-center">AI<br />잇다</span>
+            </div>
+            <div className="text-left">
+              <p className="text-blue-200 text-xs">화성시 AI 시민리더 매칭 플랫폼</p>
+              <p className="text-white font-bold text-lg">화성 AI 시민리더 잇다(IT-DA)</p>
+            </div>
+          </Link>
+
+          <div className="bg-white rounded-3xl shadow-2xl p-10 w-full max-w-sm text-center">
+            <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-3xl">
+              ✉️
+            </div>
+            <h2 className="text-xl font-black text-hwaseong-text mb-2">이메일 인증이 필요합니다</h2>
+            <p className="text-sm text-gray-500 mb-1">가입 시 입력한 이메일로 인증 메일을 보냈습니다.</p>
+            {/* 이메일 표시 / 수정 */}
+            {editingEmail ? (
+              <div className="mb-6">
+                <input
+                  type="email"
+                  value={editEmailValue}
+                  onChange={(e) => setEditEmailValue(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-center focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors mb-2"
+                  autoFocus
+                />
+                <button
+                  onClick={() => { setEditingEmail(false); setEditEmailValue(""); }}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <p className="font-semibold text-hwaseong-blue text-sm break-all">{unverifiedEmail}</p>
+                <button
+                  onClick={() => { setEditingEmail(true); setEditEmailValue(unverifiedEmail ?? ""); setResendStatus("idle"); }}
+                  className="text-xs text-gray-400 hover:text-hwaseong-blue transition-colors flex-shrink-0 underline underline-offset-2"
+                >
+                  수정
+                </button>
+              </div>
+            )}
+
+            <p className="text-xs text-gray-400 mb-8 leading-relaxed">
+              메일함에서 <strong className="text-gray-600">이메일 인증하기</strong> 버튼을 클릭한 후<br />
+              다시 로그인해 주세요. 스팸함도 확인해 보세요.
+            </p>
+
+            <div className="space-y-2">
+              {resendStatus === "sent" ? (
+                <p className="text-sm text-green-600 font-semibold py-3">✅ 인증 메일을 다시 보냈습니다.</p>
+              ) : (
+                <button
+                  onClick={() => handleResend(editingEmail && editEmailValue.trim() ? editEmailValue.trim() : undefined)}
+                  disabled={resendStatus === "sending" || resendCooldown > 0 || (editingEmail && !editEmailValue.trim())}
+                  className="w-full py-3 bg-hwaseong-blue hover:bg-blue-900 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl transition-colors"
+                >
+                  {resendStatus === "sending"
+                    ? "발송 중..."
+                    : resendCooldown > 0
+                      ? `${resendCooldown}초 후 재시도 가능`
+                      : editingEmail && editEmailValue.trim()
+                        ? "이 주소로 인증 메일 보내기"
+                        : "인증 메일 다시 보내기"}
+                </button>
+              )}
+              {resendStatus === "error" && (
+                <p className="text-xs text-red-500">메일 발송에 실패했습니다. 이메일 주소를 확인해 주세요.</p>
+              )}
+              <button
+                onClick={() => { setUnverifiedEmail(null); setResendStatus("idle"); setEditingEmail(false); }}
+                className="w-full py-3 bg-gray-100 text-gray-500 font-semibold text-sm rounded-xl hover:bg-gray-200 transition-colors"
+              >
+                다른 계정으로 로그인
+              </button>
+            </div>
+          </div>
+          <p className="text-center text-blue-200/40 text-xs mt-8">화성특례시 AI 혁신학교 AI랩 © 2026</p>
+        </div>
+      </>
+    );
   }
 
   if (loading) {
@@ -104,7 +247,7 @@ export default function LoginPage() {
         {step === 1 && (
           <div className="w-full max-w-xl">
             <h1 className="text-center text-white text-2xl font-black mb-2">어떤 역할로 로그인하시나요?</h1>
-            <p className="text-center text-blue-200 text-sm mb-8">역할을 선택하면 해당 대시보드로 이동합니다.</p>
+            <p className="text-center text-blue-200 text-sm mb-8">역할을 선택해 로그인하면 메인화면에서 대시보드에 입장할 수 있습니다.</p>
 
             {/* 메인 2카드 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">

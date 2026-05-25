@@ -8,11 +8,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const user = await getUserFromRequest(req);
   if (!user) return res.status(401).json({ error: "로그인이 필요합니다." });
 
-  const { data: lp } = await supabaseAdmin
-    .from("leader_profiles")
-    .select("id, is_verified, is_active, specialties, available_regions, available_times, rating_avg, total_lectures, max_classes_month")
-    .eq("user_id", user.userId)
-    .maybeSingle();
+  const [lpResult, profileResult] = await Promise.all([
+    supabaseAdmin
+      .from("leader_profiles")
+      .select("id, is_verified, is_active, specialties, available_regions, available_times, rating_avg, total_lectures, max_classes_month")
+      .eq("user_id", user.userId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("profiles")
+      .select("org_name, org_type")
+      .eq("id", user.userId)
+      .maybeSingle(),
+  ]);
+
+  const lp = lpResult.data;
+  const profile = profileResult.data;
 
   res.setHeader("Cache-Control", "no-store");
   return res.status(200).json({
@@ -20,6 +30,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     email: user.email,
     name: user.name,
     role: user.role,
+    orgName: profile?.org_name ?? null,
+    orgType: profile?.org_type ?? null,
     leaderProfile: lp
       ? {
           id: lp.id,

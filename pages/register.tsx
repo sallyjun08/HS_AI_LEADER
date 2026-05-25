@@ -43,14 +43,21 @@ const ROLES: {
 
 export default function RegisterPage() {
   const router = useRouter();
+  const ORG_TYPES = ["초등학교", "중학교", "고등학교", "대학교", "구청/주민센터", "기업", "복지관", "도서관", "기타"];
+
   const [step, setStep] = useState<1 | 2>(1);
   const [role, setRole] = useState<Role | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", orgName: "", orgType: "", orgTypeCustom: "" });
   const [emailStatus, setEmailStatus] = useState<"idle" | "checking" | "ok" | "taken">("idle");
   const [showPw, setShowPw] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
+  const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error" | "rate_limit">("idle");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [editEmailValue, setEditEmailValue] = useState("");
 
   // URL 쿼리로 역할이 전달되면 step 1을 건너뜀
   useEffect(() => {
@@ -96,20 +103,161 @@ export default function RegisterPage() {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: form.name, email: form.email, password: form.password, role }),
+      body: JSON.stringify({
+        name: form.name, email: form.email, password: form.password, role,
+        ...(role === "client" ? {
+          orgName: form.orgName,
+          orgType: form.orgType === "기타" ? (form.orgTypeCustom.trim() || "기타") : (form.orgType || null),
+        } : {}),
+      }),
     });
 
+    const data = await res.json();
+
     if (!res.ok) {
-      const data = await res.json();
       setError(data.error ?? "회원가입에 실패했습니다.");
       setSubmitting(false);
       return;
     }
 
-    router.replace(role === "leader" ? "/dashboard/leader" : "/dashboard/client");
+    if (data.pending) {
+      // 이메일 인증 필요 — 확인 화면으로 전환
+      setVerifyEmail(data.email ?? form.email);
+      return;
+    }
+
+    // 자동 인증(개발 환경 등) — 메인으로 이동
+    router.replace("/");
+  }
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  async function handleResend(targetEmail?: string) {
+    const sendTo = targetEmail ?? verifyEmail;
+    if (!sendTo || resendStatus === "sending") return;
+    setResendStatus("sending");
+    const res = await fetch("/api/auth/resend-verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: sendTo }),
+    });
+    if (res.ok) {
+      if (targetEmail) setVerifyEmail(targetEmail);
+      setEditingEmail(false);
+      setResendStatus("sent");
+    } else {
+      if (res.status === 429) {
+        setResendStatus("rate_limit");
+        setResendCooldown(60);
+      } else {
+        setResendStatus("error");
+      }
+    }
   }
 
   const selectedRole = ROLES.find((r) => r.id === role);
+
+  // 이메일 인증 대기 화면
+  if (verifyEmail) {
+    return (
+      <>
+        <Head>
+          <title>이메일 확인 — 화성 AI 시민리더 잇다(IT-DA)</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+        </Head>
+        <div className="min-h-screen bg-gradient-to-br from-[#001845] via-[#003087] to-[#00419e] flex flex-col items-center justify-center px-4 py-12">
+          <Link href="/" className="inline-flex items-center gap-3 mb-8 group">
+            <div className="w-11 h-11 bg-white rounded-full flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+              <span className="text-hwaseong-blue font-extrabold text-[8px] leading-tight text-center">AI<br />잇다</span>
+            </div>
+            <div className="text-left">
+              <p className="text-blue-200 text-xs">화성시 AI 시민리더 매칭 플랫폼</p>
+              <p className="text-white font-bold text-base">화성 AI 시민리더 잇다(IT-DA)</p>
+            </div>
+          </Link>
+
+          <div className="bg-white rounded-3xl shadow-2xl p-10 w-full max-w-sm text-center">
+            <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-3xl">
+              ✉️
+            </div>
+            <h2 className="text-xl font-black text-hwaseong-text mb-2">이메일을 확인해 주세요</h2>
+            <p className="text-sm text-gray-500 mb-1">아래 주소로 인증 메일을 보냈습니다.</p>
+
+            {/* 이메일 표시 / 수정 */}
+            {editingEmail ? (
+              <div className="mb-6">
+                <input
+                  type="email"
+                  value={editEmailValue}
+                  onChange={(e) => setEditEmailValue(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-center focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors mb-2"
+                  autoFocus
+                />
+                <button
+                  onClick={() => { setEditingEmail(false); setEditEmailValue(""); }}
+                  className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  취소
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <p className="font-semibold text-hwaseong-blue text-sm break-all">{verifyEmail}</p>
+                <button
+                  onClick={() => { setEditingEmail(true); setEditEmailValue(verifyEmail ?? ""); setResendStatus("idle"); }}
+                  className="text-xs text-gray-400 hover:text-hwaseong-blue transition-colors flex-shrink-0 underline underline-offset-2"
+                >
+                  수정
+                </button>
+              </div>
+            )}
+
+            <p className="text-xs text-gray-400 mb-8 leading-relaxed">
+              메일함에서 <strong className="text-gray-600">이메일 인증하기</strong> 버튼을 클릭하면
+              가입이 완료됩니다.<br />스팸함도 확인해 보세요.
+            </p>
+
+            <div className="space-y-2">
+              {resendStatus === "sent" ? (
+                <p className="text-sm text-green-600 font-semibold py-3">✅ 인증 메일을 다시 보냈습니다.</p>
+              ) : (
+                <button
+                  onClick={() => handleResend(editingEmail && editEmailValue.trim() ? editEmailValue.trim() : undefined)}
+                  disabled={resendStatus === "sending" || resendCooldown > 0 || (editingEmail && !editEmailValue.trim())}
+                  className="w-full py-3 bg-hwaseong-blue hover:bg-blue-900 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl transition-colors"
+                >
+                  {resendStatus === "sending"
+                    ? "발송 중..."
+                    : resendCooldown > 0
+                      ? `${resendCooldown}초 후 재시도 가능`
+                      : editingEmail && editEmailValue.trim()
+                        ? "이 주소로 인증 메일 보내기"
+                        : "인증 메일 다시 보내기"}
+                </button>
+              )}
+              {resendStatus === "error" && (
+                <p className="text-xs text-red-500">메일 발송에 실패했습니다. 이메일 주소를 확인해 주세요.</p>
+              )}
+              <Link href="/login" className="block w-full py-3 bg-gray-100 text-gray-500 font-semibold text-sm rounded-xl hover:bg-gray-200 transition-colors text-center">
+                로그인 페이지로 이동
+              </Link>
+              <button
+                onClick={() => { setVerifyEmail(null); setSubmitting(false); setResendStatus("idle"); setEditingEmail(false); }}
+                className="w-full py-2 text-gray-400 text-xs hover:text-gray-600 transition-colors"
+              >
+                처음부터 다시 입력하기
+              </button>
+            </div>
+          </div>
+          <p className="text-blue-200/40 text-xs mt-8">화성특례시 AI 혁신학교 AI랩 © 2026</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -222,6 +370,44 @@ export default function RegisterPage() {
               <p className="text-sm text-gray-400 mb-6">가입 후 대시보드에서 추가 정보를 작성할 수 있습니다.</p>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* 수요처 전용: 기관명 + 기관 유형 */}
+                {role === "client" && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                        기관명 <span className="text-red-400">*</span>
+                      </label>
+                      <input
+                        type="text" value={form.orgName}
+                        onChange={(e) => update("orgName", e.target.value)}
+                        placeholder="예: 동탄초등학교, 화성시청" required
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1.5">기관 유형</label>
+                      <select
+                        value={form.orgType}
+                        onChange={(e) => update("orgType", e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors bg-white text-gray-700"
+                      >
+                        <option value="">선택 안 함</option>
+                        {ORG_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      {form.orgType === "기타" && (
+                        <input
+                          type="text"
+                          value={form.orgTypeCustom}
+                          onChange={(e) => update("orgTypeCustom", e.target.value)}
+                          placeholder="기관 유형을 직접 입력해 주세요"
+                          className="mt-2 w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 transition-colors"
+                        />
+                      )}
+                    </div>
+                    <div className="border-t border-gray-100 pt-1" />
+                  </>
+                )}
+
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">
                     이름{role === "client" ? " (담당자)" : ""}

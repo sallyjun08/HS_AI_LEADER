@@ -7,10 +7,19 @@ import { calculateMatchScore, type MatchMode } from "@/lib/matching-algorithm";
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
 
+type LectureTimeSlot = { type?: string; day?: string; start?: string; end?: string; date?: string };
+
+const DAY_LABELS: Record<string, string> = {
+  mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
+};
+
 type MatchingRequest = {
   id: string;
   title: string;
   category: string;
+  lecture_type: "oneday" | "intensive" | "longterm" | null;
+  lecture_times: LectureTimeSlot[] | null;
+  session_count: number | null;
   /** 강사 매칭 시 강사의 전문 분야와 대조하는 핵심 파라미터로 사용됨 */
   target_audience: string[] | null;
   participant_count: number;
@@ -26,6 +35,12 @@ type MatchingRequest = {
   created_at: string;
   updated_at: string;
   client: { name: string; email: string } | null;
+};
+
+const LECTURE_TYPE_META: Record<string, { emoji: string; label: string; bg: string; text: string }> = {
+  oneday:    { emoji: "⚡", label: "원데이형",   bg: "bg-amber-50",  text: "text-amber-700"  },
+  intensive: { emoji: "📚", label: "집중코스형", bg: "bg-blue-50",   text: "text-blue-700"   },
+  longterm:  { emoji: "📅", label: "장기정기형", bg: "bg-purple-50", text: "text-purple-700" },
 };
 
 type MatchingLeader = {
@@ -494,12 +509,24 @@ export default function MatchingCenter() {
                       </div>
                       <h3 className="font-bold text-hwaseong-text text-sm leading-tight">{selectedReq.title}</h3>
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {selectedReq.lecture_type && LECTURE_TYPE_META[selectedReq.lecture_type] && (() => {
+                          const lt = LECTURE_TYPE_META[selectedReq.lecture_type!]!;
+                          return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg ${lt.bg} ${lt.text}`}>{lt.emoji} {lt.label}</span>;
+                        })()}
                         <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg">{selectedReq.category}</span>
                         {selectedReq.address && (
                           <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">📍 {selectedReq.address}</span>
                         )}
                         <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">📅 {fmtDate(selectedReq.start_date)}</span>
                         <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">👥 {selectedReq.participant_count}명</span>
+                        {selectedReq.session_count != null && selectedReq.session_count > 1 && (
+                          <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">🔁 {selectedReq.session_count}회차</span>
+                        )}
+                        {selectedReq.lecture_type === "longterm" && selectedReq.lecture_times && selectedReq.lecture_times.filter((s) => s.type === "recurring" && s.day).map((s) => (
+                          <span key={s.day} className="text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded-lg font-medium">
+                            {DAY_LABELS[s.day!] ?? s.day} {s.start}~{s.end}
+                          </span>
+                        ))}
                         {selectedReq.location_type && (
                           <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">{LOC_LABELS[selectedReq.location_type] ?? selectedReq.location_type}</span>
                         )}
@@ -713,6 +740,10 @@ function RequestCard({
       </div>
       <p className="text-[11px] text-gray-400 mb-2 truncate">🏢 {req.client?.name ?? "—"}</p>
       <div className="flex flex-wrap gap-1">
+        {req.lecture_type && LECTURE_TYPE_META[req.lecture_type] && (() => {
+          const lt = LECTURE_TYPE_META[req.lecture_type!]!;
+          return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${lt.bg} ${lt.text}`}>{lt.emoji} {lt.label}</span>;
+        })()}
         <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">{req.category}</span>
         {req.address && (
           <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded truncate max-w-[100px]">📍 {req.address}</span>

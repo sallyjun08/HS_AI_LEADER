@@ -858,7 +858,7 @@ export default function SettlementPage() {
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="font-bold text-hwaseong-text text-sm">강사료 목록 (보고서 승인 완료 기준)</h3>
+                <h3 className="font-bold text-hwaseong-text text-sm">강사료 목록 <span className="text-gray-400 font-normal">— 보고서 승인 완료 기준</span></h3>
                 <div className="flex gap-1">
                   {(["all", "unpaid", "paid"] as const).map((f) => (
                     <button
@@ -882,74 +882,77 @@ export default function SettlementPage() {
                   <p className="text-xs">승인된 보고서가 없습니다.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50 text-xs text-gray-400 font-semibold">
-                        <th className="text-left px-4 py-3">강사</th>
-                        <th className="text-left px-4 py-3">강의명</th>
-                        <th className="text-left px-4 py-3">강의일자</th>
-                        <th className="text-right px-4 py-3">수강인원</th>
-                        <th className="text-right px-4 py-3">강사료</th>
-                        <th className="text-center px-4 py-3">상태</th>
-                        <th className="text-center px-4 py-3">처리</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {filteredIFees.map((r) => {
-                        const paid = r.instructor_fee_paid_at !== null;
-                        return (
-                          <tr key={r.id} className={`hover:bg-gray-50/60 transition-colors ${paid ? "opacity-60" : ""}`}>
-                            <td className="px-4 py-3.5">
-                              <p className="font-semibold text-hwaseong-text text-xs">{r.match?.leader?.profiles?.name ?? "—"}</p>
-                              <p className="text-[10px] text-gray-400">{r.match?.category ?? "—"}</p>
-                            </td>
-                            <td className="px-4 py-3.5 max-w-[200px]">
-                              <p className="text-xs text-gray-700 line-clamp-1">{r.match?.title ?? "—"}</p>
-                            </td>
-                            <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">
-                              {fmtDate(r.lecture_date)}
-                            </td>
-                            <td className="px-4 py-3.5 text-right text-xs text-gray-600">
-                              {r.attendance_count}명
-                            </td>
-                            <td className="px-4 py-3.5 text-right">
-                              <FeeCell
-                                id={r.id} fee={r.instructor_fee} editing={editingIFee}
-                                onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
-                                onSave={saveIFee} onCancel={() => setEditingIFee(null)}
-                                saving={iFeeSaving}
-                              />
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                                {paid ? "✓ 지급완료" : "미지급"}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              {!paid ? (
-                                <button
-                                  onClick={() => markIFeePaid(r.id, true)}
-                                  disabled={r.instructor_fee === 0}
-                                  className="text-xs font-bold px-3 py-1.5 bg-hwaseong-blue text-white rounded-xl hover:bg-blue-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                  title={r.instructor_fee === 0 ? "강사료를 먼저 입력해주세요" : "지급 처리"}
-                                >
-                                  지급처리
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => markIFeePaid(r.id, false)}
-                                  className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
-                                >
-                                  취소
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="divide-y divide-gray-50">
+                  {filteredIFees.map((r) => {
+                    const paid   = r.instructor_fee_paid_at !== null;
+                    const noFee  = r.instructor_fee === 0;
+                    const name   = r.match?.leader?.profiles?.name ?? "—";
+                    const initial = name.charAt(0);
+                    const borderColor = paid ? "border-l-green-400" : noFee ? "border-l-gray-200" : "border-l-hwaseong-blue";
+                    const bgColor     = paid ? "bg-green-50/40" : "";
+                    return (
+                      <div key={r.id} className={`flex items-center gap-4 px-5 py-4 border-l-4 ${borderColor} ${bgColor} hover:bg-gray-50/60 transition-colors`}>
+
+                        {/* 강사 아바타 */}
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${
+                          paid ? "bg-green-100 text-green-700" : "bg-indigo-100 text-indigo-700"
+                        }`}>
+                          {initial}
+                        </div>
+
+                        {/* 강사명 + 강의 정보 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-sm font-bold text-hwaseong-text">{name}</span>
+                            <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">{r.match?.category ?? "—"}</span>
+                          </div>
+                          <p className="text-xs text-gray-600 truncate">{r.match?.title ?? "—"}</p>
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
+                            <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
+                          </div>
+                        </div>
+
+                        {/* 강사료 금액 */}
+                        <div className="flex-shrink-0 text-right min-w-[120px]">
+                          <FeeCell
+                            id={r.id} fee={r.instructor_fee} editing={editingIFee}
+                            onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
+                            onSave={saveIFee} onCancel={() => setEditingIFee(null)}
+                            saving={iFeeSaving}
+                          />
+                        </div>
+
+                        {/* 상태 + 버튼 */}
+                        <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]">
+                          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                            paid    ? "bg-green-100 text-green-700" :
+                            noFee   ? "bg-gray-100 text-gray-400"  :
+                                      "bg-amber-100 text-amber-700"
+                          }`}>
+                            {paid ? "✓ 지급완료" : noFee ? "금액 미입력" : "미지급"}
+                          </span>
+                          {!paid ? (
+                            <button
+                              onClick={() => markIFeePaid(r.id, true)}
+                              disabled={noFee}
+                              className="text-xs font-bold px-3 py-1.5 bg-hwaseong-blue text-white rounded-xl hover:bg-blue-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-full text-center"
+                              title={noFee ? "강사료를 먼저 입력해주세요" : "지급 처리"}
+                            >
+                              지급처리
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => markIFeePaid(r.id, false)}
+                              className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors w-full text-center"
+                            >
+                              지급 취소
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

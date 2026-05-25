@@ -239,11 +239,22 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
 
   // 4. 활동 보고서 데이터 생성 (패널티/보너스 테스트용 완료 요청)
   const now = new Date();
+  const approvedAt = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(); // 2일 전
+
+  // 강사별 강사료 설정 (정산 탭 샘플용)
+  const INSTRUCTOR_FEE: Record<string, { fee: number; paid: boolean }> = {
+    "김동탄": { fee: 80000, paid: true  },  // 지급완료
+    "이향남": { fee: 60000, paid: false },  // 미지급
+    "박봉담": { fee: 70000, paid: false },  // 미지급
+    "최우정": { fee: 0,     paid: false },  // 금액 미입력
+    "정화성": { fee: 50000, paid: false },  // 미지급 (다건)
+  };
 
   for (const rec of leaderRecords) {
     const { meta, leaderId } = rec;
     const lectures = meta.thisMonthLectures ?? 0;
     const monthsAgo = meta.lastLectureMonthsAgo;
+    const feeInfo = INSTRUCTOR_FEE[meta.name] ?? { fee: 0, paid: false };
 
     // 이달 강의 (정화성: 8건)
     for (let i = 0; i < lectures; i++) {
@@ -270,6 +281,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
         .single();
 
       if (mr) {
+        // 처음 4건은 승인+지급완료, 나머지 4건은 승인+미지급 (정화성 케이스)
+        const isPaid = feeInfo.paid || (meta.name === "정화성" && i < 4);
         await supabaseAdmin.from("activity_reports").insert({
           match_id:         mr.id,
           instructor_id:    leaderId,
@@ -277,11 +290,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
           attendance_count: 20,
           report_text:      "샘플 강의 보고서",
           image_urls:       [],
+          admin_approved_at: approvedAt,
+          instructor_fee:   feeInfo.fee,
+          ...(isPaid && feeInfo.fee > 0 ? { instructor_fee_paid_at: approvedAt } : {}),
         });
       }
     }
 
-    // 과거 강의 (최우정: 7개월 전, 박봉담: 2개월 전, 김동탄: 이달)
+    // 과거 강의 (최우정: 7개월 전, 박봉담: 2개월 전)
     if (typeof monthsAgo === "number" && monthsAgo > 0) {
       const pastDate = new Date(now);
       pastDate.setMonth(pastDate.getMonth() - monthsAgo);
@@ -315,9 +331,131 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
           attendance_count: 15,
           report_text:      "샘플 이전 강의 보고서",
           image_urls:       [],
+          admin_approved_at: approvedAt,
+          instructor_fee:   feeInfo.fee,
+          ...(feeInfo.paid && feeInfo.fee > 0 ? { instructor_fee_paid_at: approvedAt } : {}),
         });
       }
     }
+
+    // 김동탄: 이달 강의 1건 (미승인 보고서 1건도 추가)
+    if (meta.name === "김동탄") {
+      const thisDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-15`;
+      const { data: thisMr } = await supabaseAdmin
+        .from("match_requests")
+        .insert({
+          client_id:       clientUserId,
+          leader_id:       leaderId,
+          title:           "AI 리터러시 심화 과정 (김동탄)",
+          category:        "디지털 리터러시",
+          address:         "동탄",
+          start_date:      thisDay,
+          status:          "completed",
+          is_approved:     true,
+          participant_count: 25,
+          frequency:       "regular",
+          location_type:   "offline",
+          target_audience: [],
+          lecture_times:   [],
+        })
+        .select("id")
+        .single();
+
+      if (thisMr) {
+        // 미승인 보고서 (보고서 승인 탭에서 "미승인"으로 표시됨)
+        await supabaseAdmin.from("activity_reports").insert({
+          match_id:         thisMr.id,
+          instructor_id:    leaderId,
+          lecture_date:     thisDay,
+          attendance_count: 22,
+          report_text:      "AI 리터러시 심화 교육을 성공적으로 마쳤습니다. 참가자들의 반응이 매우 좋았습니다.",
+          image_urls:       [],
+          rating_from_client: 4.8,
+          // admin_approved_at 미설정 → 미승인 상태
+        });
+      }
+    }
+  }
+
+  // 5. 대여료 정산 샘플 (대여 신청 매칭 요청 4건)
+  const leaderMap = Object.fromEntries(leaderRecords.map((r) => [r.meta.name, r.leaderId]));
+
+  const RENTAL_REQUESTS = [
+    {
+      title:            "동탄 AI 기초 교육 (공간 대여)",
+      category:         "AI 기초 소양",
+      address:          "경기도 화성시 동탄면로 164",
+      start_date:       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-10`,
+      leader_id:        leaderMap["김동탄"],
+      needs_venue:      true,
+      rental_venue_id:  "dongtan-culture-a",
+      needs_equipment:  false,
+      rental_equipment_count: 0,
+      rental_notes:     "오전 09:00~12:00 사용 예정",
+      status:           "completed",
+      participant_count: 30,
+      rental_fee_total: 0,      // 미수납 (금액 미입력)
+    },
+    {
+      title:            "화성시청 공무원 AI 실습 (공간+장비)",
+      category:         "기업 맞춤형",
+      address:          "경기도 화성시 남양읍 시청로 159",
+      start_date:       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-12`,
+      leader_id:        leaderMap["박봉담"],
+      needs_venue:      true,
+      rental_venue_id:  "hwaseong-city-hall-main",
+      needs_equipment:  true,
+      rental_equipment_count: 20,
+      rental_notes:     "노트북 20대 + 대회의실 오후 사용",
+      status:           "ongoing",
+      participant_count: 20,
+      rental_fee_total: 0,      // 미수납 (금액 미입력)
+    },
+    {
+      title:            "봉담 AI 시민 리더 교육 (장비 대여)",
+      category:         "AI 시민 리더",
+      address:          "경기도 화성시 봉담읍 봉담로 11",
+      start_date:       `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-20`,
+      leader_id:        leaderMap["이향남"],
+      needs_venue:      false,
+      rental_venue_id:  null,
+      needs_equipment:  true,
+      rental_equipment_count: 10,
+      rental_notes:     "노트북 10대 반일 사용",
+      status:           "matched",
+      participant_count: 10,
+      rental_fee_total: 30000, // 금액 입력 완료, 미수납
+    },
+    {
+      title:            "도서관 시니어 AI 교육 (공간 대여)",
+      category:         "어르신 교육",
+      address:          "경기도 화성시 봉담읍 와우리로 45",
+      start_date:       `${now.getFullYear()}-${String(now.getMonth() - 1).padStart(2, "0")}-05`,
+      leader_id:        leaderMap["최우정"],
+      needs_venue:      true,
+      rental_venue_id:  "hwaseong-library-seminar",
+      needs_equipment:  false,
+      rental_equipment_count: 0,
+      rental_notes:     null,
+      status:           "completed",
+      participant_count: 20,
+      rental_fee_total: 20000, // 수납완료
+      rental_fee_paid_at: approvedAt,
+    },
+  ] as const;
+
+  for (const rr of RENTAL_REQUESTS) {
+    const { rental_fee_paid_at, ...rest } = rr as typeof rr & { rental_fee_paid_at?: string };
+    await supabaseAdmin.from("match_requests").insert({
+      ...rest,
+      client_id:       clientUserId,
+      is_approved:     true,
+      frequency:       "single",
+      location_type:   "offline",
+      target_audience: [],
+      lecture_times:   [],
+      ...(rental_fee_paid_at ? { rental_fee_paid_at } : {}),
+    });
   }
 
   return res.status(200).json({
@@ -327,7 +465,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       leaders: LEADERS.map((l) => ({ name: l.name, email: l.email, password: "Test1234!" })),
       client:  { name: CLIENT.name, email: CLIENT.email, password: "Test1234!" },
     },
-    note: "매칭 센터에서 대기 중인 요청 3건을 확인하세요.",
+    note: "매칭 센터 대기 3건 · 강사료 미지급 다수 · 대여료 미수납 3건 생성 완료",
   });
 }
 

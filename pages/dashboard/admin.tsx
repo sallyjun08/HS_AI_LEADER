@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -49,21 +49,6 @@ type FeedLeader = {
   isVerified: boolean;
 };
 
-type FeedItem = { id: string; type: "request" | "report" | "leader"; title: string; sub: string; time: string };
-
-function formatRelative(iso: string): string {
-  if (!iso) return "";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1)  return "방금";
-  if (mins < 60) return `${mins}분 전`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}시간 전`;
-  const days = Math.floor(hours / 24);
-  if (days < 7)  return `${days}일 전`;
-  return new Date(iso).toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
-}
-
 type Report = {
   id: string;
   lecture_date: string;
@@ -80,7 +65,6 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [requests, setRequests] = useState<MatchRequest[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [feedLeaders, setFeedLeaders] = useState<FeedLeader[]>([]);
   const [seeding, setSeeding] = useState(false);
@@ -104,12 +88,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (user) fetchAll();
   }, [user]);
-
-  async function handleRefresh() {
-    setRefreshing(true);
-    await fetchAll();
-    setRefreshing(false);
-  }
 
   async function handleSeed() {
     setSeeding(true);
@@ -142,23 +120,6 @@ export default function AdminDashboard() {
     const t = setTimeout(() => setToast(null), 3500);
     return () => clearTimeout(t);
   }, [toast]);
-
-  const feedItems = useMemo((): FeedItem[] => {
-    const items: FeedItem[] = [];
-    [...requests]
-      .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())
-      .slice(0, 6)
-      .forEach((r) => items.push({ id: r.id, type: "request", title: r.title, sub: r.client?.name ?? "", time: r.created_at ?? "" }));
-    [...reports]
-      .sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())
-      .slice(0, 4)
-      .forEach((r) => items.push({ id: r.id, type: "report", title: r.match?.title ?? "활동 보고서", sub: r.match?.leader?.profiles?.name ?? "", time: r.submitted_at }));
-    [...feedLeaders]
-      .sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime())
-      .slice(0, 3)
-      .forEach((l) => items.push({ id: l.id, type: "leader", title: `${l.name} 강사 가입`, sub: l.isVerified ? "인증 완료" : "인증 대기", time: l.joinedAt }));
-    return items.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 10);
-  }, [requests, reports, feedLeaders]);
 
   if (loading || !user) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
@@ -354,65 +315,64 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            {/* ── 차트 영역 + 실시간 알림 피드 ── */}
-            <div className="grid lg:grid-cols-3 gap-6">
+            {/* ── 차트 + 현황 카드 ── */}
+            <div className="space-y-6">
 
-              {/* 왼쪽: 차트 2개 (2/3 너비) */}
-              <div className="lg:col-span-2 space-y-6">
-
-                {/* 바 차트 — 월별 교육 진행 현황 */}
-                <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="font-bold text-hwaseong-text">월별 교육 진행 현황</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">강의 완료(completed) 기준</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded bg-hwaseong-blue" />
-                      <span className="text-xs text-gray-500">강의 완료 수</span>
-                    </div>
+              {/* 바 차트 — 월별 교육 진행 현황 */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold text-hwaseong-text">월별 교육 진행 현황</h3>
+                    <p className="text-xs text-gray-400 mt-0.5">강의 완료(completed) 기준</p>
                   </div>
-                  {stats.monthlyStats.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={200}>
-                      <BarChart data={stats.monthlyStats} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                        <Tooltip
-                          contentStyle={{ borderRadius: 12, fontSize: 12 }}
-                          formatter={(v) => [`${v ?? 0}건`, "강의 완료"]}
-                        />
-                        <Bar dataKey="count" name="강의 완료" fill="#003087" radius={[6, 6, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-48 flex flex-col items-center justify-center text-gray-300">
-                      <p className="text-4xl mb-2">📊</p>
-                      <p className="text-sm">완료된 강의 데이터가 없습니다.</p>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded bg-hwaseong-blue" />
+                    <span className="text-xs text-gray-500">강의 완료 수</span>
+                  </div>
                 </div>
+                {stats.monthlyStats.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={stats.monthlyStats} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: 12, fontSize: 12 }}
+                        formatter={(v) => [`${v ?? 0}건`, "강의 완료"]}
+                      />
+                      <Bar dataKey="count" name="강의 완료" fill="#003087" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-48 flex flex-col items-center justify-center text-gray-300">
+                    <p className="text-4xl mb-2">📊</p>
+                    <p className="text-sm">완료된 강의 데이터가 없습니다.</p>
+                  </div>
+                )}
+              </div>
 
-                {/* 요청 상태 요약 3칸 */}
-                <div className="grid grid-cols-3 gap-4">
-                  {[
-                    { label: "전체 요청",  value: stats.requests.total,     color: "text-hwaseong-blue", icon: "📋", bg: "bg-blue-50" },
-                    { label: "매칭 진행",  value: stats.requests.matched,    color: "text-sky-600",       icon: "🔗", bg: "bg-sky-50" },
-                    { label: "강의 완료",  value: stats.requests.completed,  color: "text-green-600",     icon: "🎓", bg: "bg-green-50" },
-                  ].map((s) => (
-                    <div key={s.label} className="bg-white rounded-2xl p-4 border border-gray-100 text-center">
-                      <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center text-base mx-auto mb-2`}>{s.icon}</div>
-                      <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
-                      <p className="text-xs text-gray-400 mt-1">{s.label}</p>
-                    </div>
-                  ))}
+              {/* 요청 상태 + 강사·수강생 현황 */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  { label: "전체 요청", value: stats.requests.total,    color: "text-hwaseong-blue", icon: "📋", bg: "bg-blue-50" },
+                  { label: "매칭 진행", value: stats.requests.matched,   color: "text-sky-600",       icon: "🔗", bg: "bg-sky-50" },
+                  { label: "강의 완료", value: stats.requests.completed, color: "text-green-600",     icon: "🎓", bg: "bg-green-50" },
+                ].map((s) => (
+                  <div key={s.label} className="bg-white rounded-2xl p-4 border border-gray-100 text-center">
+                    <div className={`w-9 h-9 ${s.bg} rounded-xl flex items-center justify-center text-base mx-auto mb-2`}>{s.icon}</div>
+                    <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-gray-400 mt-1">{s.label}</p>
+                  </div>
+                ))}
+                <div className="bg-white rounded-2xl p-4 border border-gray-100 text-center">
+                  <div className="w-9 h-9 bg-amber-50 rounded-xl flex items-center justify-center text-base mx-auto mb-2">⭐</div>
+                  <p className="text-3xl font-black text-amber-500">{stats.reports.avgSatisfaction}</p>
+                  <p className="text-xs text-gray-400 mt-1">평균 만족도</p>
                 </div>
               </div>
 
-              {/* 오른쪽: 실시간 피드 + 강사 현황 (1/3 너비) */}
-              <div className="space-y-4">
-
-                {/* 강사 현황 요약 */}
+              {/* 강사 현황 + 수강생 현황 */}
+              <div className="grid lg:grid-cols-2 gap-4">
                 <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">강사 현황</h4>
                   <div className="space-y-2.5">
@@ -440,7 +400,6 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* 수강생 현황 요약 */}
                 <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
                   <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">수강생 현황</h4>
                   <div className="space-y-2.5">
@@ -449,60 +408,9 @@ export default function AdminDashboard() {
                       <span className="text-sm font-bold text-hwaseong-text">{stats.reports.totalAttendees}명</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">평균 만족도</span>
-                      <span className="text-sm font-bold text-amber-500">⭐ {stats.reports.avgSatisfaction} / 5</span>
-                    </div>
-                    <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-500">전체 보고서</span>
                       <span className="text-sm font-bold text-sky-600">{stats.reports.total}건</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* 실시간 활동 피드 */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                      </span>
-                      <h4 className="text-xs font-bold text-hwaseong-text">최근 활동 피드</h4>
-                    </div>
-                    <button onClick={handleRefresh} disabled={refreshing} className="text-[10px] text-gray-400 hover:text-hwaseong-blue disabled:opacity-40">
-                      {refreshing ? "..." : "↺ 새로고침"}
-                    </button>
-                  </div>
-                  <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
-                    {feedItems.length === 0 ? (
-                      <div className="py-8 text-center text-gray-300 text-sm">활동 내역이 없습니다.</div>
-                    ) : (
-                      feedItems.map((item) => (
-                        <div key={`${item.type}-${item.id}`} className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-sm flex-shrink-0 mt-0.5 ${
-                            item.type === "request" ? "bg-blue-100" :
-                            item.type === "report"  ? "bg-green-100" :
-                            "bg-indigo-100"
-                          }`}>
-                            {item.type === "request" ? "📋" : item.type === "report" ? "📄" : "🏅"}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-hwaseong-text truncate leading-tight">{item.title}</p>
-                            {item.sub && <p className="text-[11px] text-gray-400 mt-0.5 truncate">{item.sub}</p>}
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                              item.type === "request" ? "bg-blue-50 text-blue-600" :
-                              item.type === "report"  ? "bg-green-50 text-green-600" :
-                              "bg-indigo-50 text-indigo-600"
-                            }`}>
-                              {item.type === "request" ? "요청" : item.type === "report" ? "보고" : "가입"}
-                            </span>
-                            <p className="text-[10px] text-gray-300 mt-1">{formatRelative(item.time)}</p>
-                          </div>
-                        </div>
-                      ))
-                    )}
                   </div>
                 </div>
               </div>

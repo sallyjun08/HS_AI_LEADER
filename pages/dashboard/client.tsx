@@ -77,6 +77,51 @@ const WEEKDAYS = [
   { key: "thu", label: "목" }, { key: "fri", label: "금" }, { key: "sat", label: "토" }, { key: "sun", label: "일" },
 ];
 
+function generateConsecutiveDates(
+  startDate: string,
+  count: number,
+  startTime: string,
+  endTime: string,
+): { date: string; startTime: string; endTime: string; day: string }[] {
+  if (!startDate || count <= 0) return [];
+  const result: { date: string; startTime: string; endTime: string; day: string }[] = [];
+  const MS_PER_DAY = 86_400_000;
+  let current = new Date(startDate + "T00:00:00");
+  for (let i = 0; i < count; i++) {
+    const y = current.getFullYear();
+    const mo = String(current.getMonth() + 1).padStart(2, "0");
+    const d = String(current.getDate()).padStart(2, "0");
+    result.push({ date: `${y}-${mo}-${d}`, startTime, endTime, day: ["sun","mon","tue","wed","thu","fri","sat"][current.getDay()] });
+    current = new Date(current.getTime() + MS_PER_DAY);
+  }
+  return result;
+}
+
+function generateLongtermDates(
+  startDate: string,
+  weekdaySlots: { day: string; startTime: string; endTime: string }[],
+  sessionCount: number,
+): { date: string; startTime: string; endTime: string; day: string }[] {
+  if (!startDate || weekdaySlots.length === 0 || sessionCount <= 0) return [];
+  const orderedSlots = WEEKDAYS.map((w) => weekdaySlots.find((s) => s.day === w.key)).filter(Boolean) as typeof weekdaySlots;
+  const result: { date: string; startTime: string; endTime: string; day: string }[] = [];
+  const MS_PER_DAY = 86_400_000;
+  let current = new Date(startDate + "T00:00:00");
+  const limit = new Date(current.getTime() + 400 * MS_PER_DAY);
+  while (result.length < sessionCount && current < limit) {
+    const dayKey = ["sun","mon","tue","wed","thu","fri","sat"][current.getDay()];
+    const slot = orderedSlots.find((s) => s.day === dayKey);
+    if (slot) {
+      const y = current.getFullYear();
+      const mo = String(current.getMonth() + 1).padStart(2, "0");
+      const d = String(current.getDate()).padStart(2, "0");
+      result.push({ date: `${y}-${mo}-${d}`, startTime: slot.startTime, endTime: slot.endTime, day: dayKey });
+    }
+    current = new Date(current.getTime() + MS_PER_DAY);
+  }
+  return result;
+}
+
 function formatHours(h: number): string {
   const w = Math.floor(h);
   const mins = Math.round((h - w) * 60);
@@ -260,7 +305,7 @@ export default function ClientDashboard() {
   const [reports, setReports] = useState<ClientReport[]>([]);
   const [form, setForm] = useState({
     lectureType: "" as "" | LectureType,
-    institutionName: "", contactPhone: "",
+    institutionName: user?.orgName ?? "", contactPhone: "",
     title: "", category: "",
     targetAudience: [] as string[],
     customAudience: "",
@@ -298,9 +343,6 @@ export default function ClientDashboard() {
       .then((r) => r.json())
       .then((d) => { if (Array.isArray(d)) setRentalSettings(d); })
       .catch(() => {});
-    if (user.orgName) {
-      setForm((p) => ({ ...p, institutionName: p.institutionName || user.orgName || "" }));
-    }
   }, [user]);
 
   async function submitRequest(e: React.FormEvent) {
@@ -330,9 +372,19 @@ export default function ClientDashboard() {
           notes: form.notes,
           needsVenue: form.rentalEnabled && form.rentalVenueId !== "",
           rentalVenueId: form.rentalEnabled && form.rentalVenueId ? form.rentalVenueId : null,
-          rentalStartTime: form.rentalEnabled && form.rentalVenueId && form.sessionSlots[0]?.startTime ? form.sessionSlots[0].startTime : null,
+          rentalStartTime: form.rentalEnabled && form.rentalVenueId
+            ? (form.lectureType === "longterm" ? longtermAutoSlots[0]?.startTime
+              : form.lectureType === "intensive" ? intensiveAutoSlots[0]?.startTime
+              : form.startTime) ?? null
+            : null,
           lectureTimes: form.rentalEnabled && form.rentalVenueId
-            ? form.sessionSlots.map((s) => ({ date: s.date, start: s.startTime, end: addHours(s.startTime, formLectureHours) }))
+            ? form.lectureType === "longterm"
+              ? longtermAutoSlots.map((s) => ({ date: s.date, start: s.startTime, end: s.endTime || addHours(s.startTime, formLectureHours) }))
+              : form.lectureType === "intensive"
+                ? intensiveAutoSlots.map((s) => ({ date: s.date, start: s.startTime, end: s.endTime }))
+                : form.lectureType === "oneday" && form.startDate && form.startTime
+                  ? [{ date: form.startDate, start: form.startTime, end: form.endTime || addHours(form.startTime, formLectureHours) }]
+                  : []
             : form.lectureType === "longterm" && form.weekdaySlots.length > 0
               ? form.weekdaySlots.map((s) => ({ type: "recurring", day: s.day, start: s.startTime, end: s.endTime }))
               : form.lectureType === "oneday" && form.startTime && form.endTime
@@ -408,6 +460,18 @@ export default function ClientDashboard() {
     ? (Number(form.rentalEquipmentCount) || 0) * (laptopSetting?.fee_per_use ?? 0) * formLectureHours * formSessionCount : 0;
   const instructorFee = formSessionCount * FEE_PER_SESSION;
   const grandTotal = instructorFee + venueFee + equipmentFee;
+
+  // 장기형 + 장소 대여: 반복 요일·시간으로 전 회차 날짜 자동 생성
+  const longtermAutoSlots =
+    form.lectureType === "longterm"
+      ? generateLongtermDates(form.startDate, form.weekdaySlots, formSessionCount)
+      : [];
+
+  // 집중코스형 + 장소 대여: 시작일부터 연속 날짜 자동 생성
+  const intensiveAutoSlots =
+    form.lectureType === "intensive" && form.startDate && form.startTime
+      ? generateConsecutiveDates(form.startDate, formSessionCount, form.startTime, addHours(form.startTime, formLectureHours))
+      : [];
 
   return (
     <>
@@ -776,25 +840,14 @@ export default function ClientDashboard() {
               </div>
 
               {/* 기관명 + 담당자 연락처 */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">기관명</label>
-                  <input
-                    type="text" value={form.institutionName}
-                    onChange={(e) => setForm((p) => ({ ...p, institutionName: e.target.value }))}
-                    placeholder="예: 동탄초등학교"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1">담당자 연락처</label>
-                  <input
-                    type="tel" value={form.contactPhone}
-                    onChange={(e) => setForm((p) => ({ ...p, contactPhone: e.target.value }))}
-                    placeholder="010-0000-0000"
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">담당자 연락처</label>
+                <input
+                  type="tel" value={form.contactPhone}
+                  onChange={(e) => setForm((p) => ({ ...p, contactPhone: e.target.value }))}
+                  placeholder="010-0000-0000"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                />
               </div>
 
               <div>
@@ -937,6 +990,33 @@ export default function ClientDashboard() {
                         </div>
                       </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">강의 시작 시간</label>
+                        <select
+                          value={form.startTime}
+                          onChange={(e) => setForm((p) => ({ ...p, startTime: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/30"
+                        >
+                          <option value="">시간 선택</option>
+                          {generateStartSlots().map((t) => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1">종료 시간</label>
+                        <div className="flex items-center h-[42px] px-3 border border-gray-100 rounded-xl bg-gray-50">
+                          <span className="text-sm text-gray-500">
+                            {form.startTime ? addHours(form.startTime, formLectureHours) : "-"}
+                          </span>
+                          <span className="text-[10px] text-gray-400 ml-1.5">자동</span>
+                        </div>
+                      </div>
+                    </div>
+                    {form.startTime && (
+                      <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded-lg">
+                        ⏱ {form.startTime} ~ {addHours(form.startTime, formLectureHours)} · 회당 {formatHours(formLectureHours)}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1118,7 +1198,34 @@ export default function ClientDashboard() {
                         교육 공간 선택 <span className="font-normal text-gray-400">(선택사항 · 직접 섭외 시 미선택)</span>
                       </label>
                       <div className="space-y-2">
-                        {rentalSettings.filter((s) => s.type === "venue" && s.available).map((venue) => {
+                        {rentalSettings.filter((s) => {
+                          if (s.type !== "venue" || !s.available) return false;
+                          const vStart = s.available_slots ? timeToMinutes(s.available_slots.start) : 0;
+                          const vEnd   = s.available_slots ? timeToMinutes(s.available_slots.end)   : 1440;
+                          const vDays  = s.available_slots?.days ?? [];
+                          if (form.lectureType === "oneday" && form.startDate && form.startTime && form.endTime) {
+                            const dayKey = ["sun","mon","tue","wed","thu","fri","sat"][new Date(form.startDate + "T00:00:00").getDay()];
+                            if (!vDays.includes(dayKey)) return false;
+                            if (timeToMinutes(form.startTime) < vStart || timeToMinutes(form.endTime) > vEnd) return false;
+                          }
+                          if (form.lectureType === "intensive" && form.startDate && form.startTime) {
+                            const endTime = addHours(form.startTime, formLectureHours);
+                            const reqDays = [...new Set(Array.from({ length: formSessionCount }, (_, i) => {
+                              const d = new Date(new Date(form.startDate + "T00:00:00").getTime() + i * 86_400_000);
+                              return ["sun","mon","tue","wed","thu","fri","sat"][d.getDay()];
+                            }))];
+                            if (!reqDays.every((d) => vDays.includes(d))) return false;
+                            if (timeToMinutes(form.startTime) < vStart || timeToMinutes(endTime) > vEnd) return false;
+                          }
+                          if (form.lectureType === "longterm" && form.weekdaySlots.length > 0) {
+                            if (!form.weekdaySlots.every((ws) => vDays.includes(ws.day))) return false;
+                            for (const ws of form.weekdaySlots) {
+                              if (!ws.startTime || !ws.endTime) continue;
+                              if (timeToMinutes(ws.startTime) < vStart || timeToMinutes(ws.endTime) > vEnd) return false;
+                            }
+                          }
+                          return true;
+                        }).map((venue) => {
                           const isSelected = form.rentalVenueId === venue.id;
                           return (
                             <button
@@ -1162,67 +1269,134 @@ export default function ClientDashboard() {
                             </button>
                           );
                         })}
+                        {/* 일정 조건에 맞는 장소가 없을 때 안내 */}
+                        {(() => {
+                          const scheduleSet =
+                            (form.lectureType === "oneday" && !!form.startDate && !!form.startTime && !!form.endTime) ||
+                            (form.lectureType === "intensive" && !!form.startDate && !!form.startTime) ||
+                            (form.lectureType === "longterm" && form.weekdaySlots.length > 0);
+                          const anyVisible = rentalSettings.some((s) => s.type === "venue" && s.available);
+                          if (!scheduleSet || !anyVisible) return null;
+                          // reuse same filter logic inline
+                          const visible = rentalSettings.filter((s) => {
+                            if (s.type !== "venue" || !s.available) return false;
+                            const vStart = s.available_slots ? timeToMinutes(s.available_slots.start) : 0;
+                            const vEnd   = s.available_slots ? timeToMinutes(s.available_slots.end)   : 1440;
+                            const vDays  = s.available_slots?.days ?? [];
+                            if (form.lectureType === "oneday" && form.startDate && form.startTime && form.endTime) {
+                              const dk = ["sun","mon","tue","wed","thu","fri","sat"][new Date(form.startDate + "T00:00:00").getDay()];
+                              return vDays.includes(dk) && timeToMinutes(form.startTime) >= vStart && timeToMinutes(form.endTime) <= vEnd;
+                            }
+                            if (form.lectureType === "intensive" && form.startDate && form.startTime) {
+                              const et = addHours(form.startTime, formLectureHours);
+                              const rd = [...new Set(Array.from({ length: formSessionCount }, (_, i) => {
+                                const d = new Date(new Date(form.startDate + "T00:00:00").getTime() + i * 86_400_000);
+                                return ["sun","mon","tue","wed","thu","fri","sat"][d.getDay()];
+                              }))];
+                              return rd.every((d) => vDays.includes(d)) && timeToMinutes(form.startTime) >= vStart && timeToMinutes(et) <= vEnd;
+                            }
+                            if (form.lectureType === "longterm") {
+                              return form.weekdaySlots.every((ws) => vDays.includes(ws.day));
+                            }
+                            return true;
+                          });
+                          if (visible.length > 0) return null;
+                          const hint =
+                            form.lectureType === "oneday" ? `선택한 날짜·시간에 운영하는 장소가 없습니다` :
+                            form.lectureType === "intensive" ? `해당 기간·시간에 모두 운영하는 장소가 없습니다` :
+                            `선택한 요일(${form.weekdaySlots.map((s) => DAY_LABELS[s.day]).join("·")})에 모두 운영하는 장소가 없습니다`;
+                          return (
+                            <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-3 py-3 text-center">{hint}</p>
+                          );
+                        })()}
                       </div>
                     </div>
 
-                    {/* 회차별 날짜 + 대여 시작 시간 (공간 선택 시 표시) */}
+                    {/* 회차별 일정 (장소 선택 시 표시) */}
                     {form.rentalVenueId && selectedVenue && (
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-2">
-                          회차별 날짜 · 시작 시간 <span className="text-red-400">*</span>
-                          {selectedVenue.available_slots && (
-                            <span className="font-normal text-gray-400 ml-1">
-                              (운영: {selectedVenue.available_slots.start} ~ {selectedVenue.available_slots.end})
-                            </span>
-                          )}
-                        </label>
-                        <div className="space-y-2">
-                          {form.sessionSlots.map((slot, idx) => (
-                            <div key={idx} className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2.5">
-                              <span className="text-xs font-bold text-gray-400 w-10 flex-shrink-0">{idx + 1}회차</span>
-                              <input
-                                type="date"
-                                value={slot.date}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setForm((p) => ({
-                                    ...p,
-                                    startDate: idx === 0 ? val : p.startDate,
-                                    sessionSlots: p.sessionSlots.map((s, i) => i === idx ? { ...s, date: val } : s),
-                                  }));
-                                }}
-                                required
-                                className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
-                              />
-                              <select
-                                value={slot.startTime}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setForm((p) => ({
-                                    ...p,
-                                    sessionSlots: p.sessionSlots.map((s, i) => i === idx ? { ...s, startTime: val } : s),
-                                  }));
-                                }}
-                                required
-                                className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 bg-white"
-                              >
-                                <option value="">시간 선택</option>
-                                {generateTimeSlots(
-                                  selectedVenue.available_slots?.start ?? "09:00",
-                                  selectedVenue.available_slots?.end   ?? "18:00",
-                                  formLectureHours,
-                                ).map((t) => (
-                                  <option key={t} value={t}>{t}</option>
+                        {form.lectureType === "longterm" ? (
+                          /* 장기형: 반복 요일·시간으로 자동 생성된 일정 미리보기 */
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-2">
+                              대여 일정 (자동 생성)
+                              <span className="font-normal text-gray-400 ml-1">
+                                · {form.weekdaySlots.map((s) => DAY_LABELS[s.day]).join("·")}요일 반복 · 총 {formSessionCount}회
+                              </span>
+                            </label>
+                            {longtermAutoSlots.length > 0 ? (
+                              <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
+                                {longtermAutoSlots.map((slot, idx) => (
+                                  <div key={idx} className="flex items-center gap-2 bg-white border border-purple-100 rounded-xl px-3 py-2">
+                                    <span className="text-xs font-bold text-purple-500 w-10 flex-shrink-0">{idx + 1}회차</span>
+                                    <span className="text-xs font-semibold text-gray-500 w-7 flex-shrink-0">{DAY_LABELS[slot.day]}</span>
+                                    <span className="text-xs text-gray-700 flex-1">
+                                      {new Date(slot.date + "T00:00:00").toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+                                    </span>
+                                    <span className="text-xs text-gray-500 flex-shrink-0">
+                                      {slot.startTime && slot.endTime ? `${slot.startTime} ~ ${slot.endTime}` : "시간 미설정"}
+                                    </span>
+                                  </div>
                                 ))}
-                              </select>
-                              {slot.startTime && (
-                                <span className="text-xs text-gray-500 flex-shrink-0">
-                                  ~ {addHours(slot.startTime, formLectureHours)}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-3 py-3 text-center">
+                                {!form.startDate
+                                  ? "강의 시작일을 먼저 입력해주세요"
+                                  : "진행 요일과 시간을 먼저 설정해주세요"}
+                              </p>
+                            )}
+                          </div>
+                        ) : form.lectureType === "intensive" ? (
+                          /* 집중코스형: 연속 날짜 자동 생성 미리보기 */
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-2">
+                              대여 일정 (자동 생성)
+                              <span className="font-normal text-gray-400 ml-1">· 시작일부터 {formSessionCount}일 연속</span>
+                            </label>
+                            {intensiveAutoSlots.length > 0 ? (
+                              <div className="space-y-1.5">
+                                {intensiveAutoSlots.map((slot, idx) => (
+                                  <div key={idx} className="flex items-center gap-2 bg-white border border-blue-100 rounded-xl px-3 py-2">
+                                    <span className="text-xs font-bold text-blue-500 w-10 flex-shrink-0">{idx + 1}회차</span>
+                                    <span className="text-xs font-semibold text-gray-500 w-7 flex-shrink-0">{DAY_LABELS[slot.day]}</span>
+                                    <span className="text-xs text-gray-700 flex-1">
+                                      {new Date(slot.date + "T00:00:00").toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+                                    </span>
+                                    <span className="text-xs text-gray-500 flex-shrink-0">
+                                      {slot.startTime && slot.endTime ? `${slot.startTime} ~ ${slot.endTime}` : "시간 미설정"}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-3 py-3 text-center">
+                                {!form.startDate ? "강의 시작일을 먼저 입력해주세요" : "강의 시작 시간을 먼저 설정해주세요"}
+                              </p>
+                            )}
+                          </div>
+                        ) : form.lectureType === "oneday" ? (
+                          /* 원데이형: 단일 일정 자동 표시 */
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-2">대여 일정</label>
+                            {form.startDate && form.startTime && form.endTime ? (
+                              <div className="flex items-center gap-2 bg-white border border-amber-100 rounded-xl px-3 py-2">
+                                <span className="text-xs font-bold text-amber-500 w-10 flex-shrink-0">1회차</span>
+                                <span className="text-xs font-semibold text-gray-500 w-7 flex-shrink-0">
+                                  {DAY_LABELS[["sun","mon","tue","wed","thu","fri","sat"][new Date(form.startDate + "T00:00:00").getDay()]]}
                                 </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                                <span className="text-xs text-gray-700 flex-1">
+                                  {new Date(form.startDate + "T00:00:00").toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}
+                                </span>
+                                <span className="text-xs text-gray-500 flex-shrink-0">{form.startTime} ~ {form.endTime}</span>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-400 bg-gray-50 rounded-xl px-3 py-3 text-center">
+                                날짜와 시간을 먼저 입력해주세요
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     )}
 

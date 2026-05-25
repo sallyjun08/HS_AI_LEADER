@@ -19,12 +19,13 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { icon: "⚙️", label: "내 정보",     href: "/dashboard/settings" },
   ],
   admin: [
-    { icon: "📊", label: "통계",          href: "/dashboard/admin" },
-    { icon: "🏅", label: "강사 관리",     href: "/admin/leaders" },
-    { icon: "🔍", label: "요청 검토",     href: "/admin/review" },
-    { icon: "🎯", label: "매칭 센터",     href: "/admin/matching-center" },
+    { icon: "📊", label: "통계",           href: "/dashboard/admin" },
+    { icon: "🏅", label: "강사 관리",      href: "/admin/leaders" },
+    { icon: "🔍", label: "요청 검토",      href: "/admin/review" },
+    { icon: "🎯", label: "매칭 센터",      href: "/admin/matching-center" },
     { icon: "📋", label: "전체 요청 현황", href: "/admin/requests" },
-    { icon: "💰", label: "정산 관리",     href: "/admin/settlement" },
+    { icon: "💰", label: "정산 관리",      href: "/admin/settlement" },
+    { icon: "🏢", label: "대여 설정",      href: "/admin/rental-settings" },
   ],
 };
 

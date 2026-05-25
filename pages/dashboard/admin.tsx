@@ -51,36 +51,6 @@ type FeedLeader = {
 
 type FeedItem = { id: string; type: "request" | "report" | "leader"; title: string; sub: string; time: string };
 
-type AvailableSlots = { days: string[]; start: string; end: string };
-
-type RentalSetting = {
-  id: string;
-  type: "venue" | "equipment";
-  name: string;
-  address: string | null;
-  capacity: number | null;
-  features: string[];
-  fee_per_use: number;
-  fee_unit: string;
-  max_quantity: number | null;
-  available: boolean;
-  available_slots: AvailableSlots | null;
-};
-
-const DAYS: { key: string; label: string }[] = [
-  { key: "mon", label: "월" }, { key: "tue", label: "화" },
-  { key: "wed", label: "수" }, { key: "thu", label: "목" },
-  { key: "fri", label: "금" }, { key: "sat", label: "토" },
-  { key: "sun", label: "일" },
-];
-
-function formatSlots(slots: AvailableSlots | null): string {
-  if (!slots || slots.days.length === 0) return "미설정";
-  const dayLabels = DAYS.filter((d) => slots.days.includes(d.key)).map((d) => d.label).join("·");
-  return `${dayLabels}  ${slots.start} ~ ${slots.end}`;
-}
-
-
 function formatRelative(iso: string): string {
   if (!iso) return "";
   const diff = Date.now() - new Date(iso).getTime();
@@ -113,11 +83,6 @@ export default function AdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [feedLeaders, setFeedLeaders] = useState<FeedLeader[]>([]);
-  const [rentalSettings, setRentalSettings] = useState<RentalSetting[]>([]);
-  const [editingRental, setEditingRental] = useState<{ id: string; fee: string } | null>(null);
-  const [rentalSaving, setRentalSaving] = useState(false);
-  const [editingSlots, setEditingSlots] = useState<{ id: string; slots: AvailableSlots } | null>(null);
-  const [slotsSaving, setSlotsSaving] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<{ accounts?: { leaders: { name: string; email: string; password: string }[]; client: { name: string; email: string; password: string } } } | null>(null);
 
@@ -126,16 +91,14 @@ export default function AdminDashboard() {
   }, [loading, user, router]);
 
   async function fetchAll() {
-    const [s, rq, rp, ld, rs] = await Promise.all([
+    const [s, rq, rp, ld] = await Promise.all([
       fetch("/api/admin/stats").then((r) => r.json()),
       fetch("/api/match-requests").then((r) => r.json()),
       fetch("/api/activity-reports").then((r) => r.json()),
       fetch("/api/admin/leaders/list").then((r) => r.json()),
-      fetch("/api/public/rental-settings").then((r) => r.json()),
     ]);
     setStats(s); setRequests(rq); setReports(rp);
     if (Array.isArray(ld)) setFeedLeaders(ld);
-    if (Array.isArray(rs)) setRentalSettings(rs);
   }
 
   useEffect(() => {
@@ -146,58 +109,6 @@ export default function AdminDashboard() {
     setRefreshing(true);
     await fetchAll();
     setRefreshing(false);
-  }
-
-  async function saveRentalFee(id: string, fee: string) {
-    const n = Number(fee);
-    if (isNaN(n) || n < 0) return;
-    setRentalSaving(true);
-    const res = await fetch(`/api/admin/rental-settings/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fee_per_use: n }),
-    });
-    if (res.ok) {
-      const updated: RentalSetting = await res.json();
-      setRentalSettings((prev) => prev.map((s) => s.id === id ? updated : s));
-      setToast({ msg: "대여료가 저장되었습니다.", ok: true });
-    } else {
-      setToast({ msg: "저장 실패", ok: false });
-    }
-    setEditingRental(null);
-    setRentalSaving(false);
-  }
-
-  async function saveSlots(id: string, slots: AvailableSlots) {
-    setSlotsSaving(true);
-    const res = await fetch(`/api/admin/rental-settings/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ available_slots: slots }),
-    });
-    if (res.ok) {
-      const updated: RentalSetting = await res.json();
-      setRentalSettings((prev) => prev.map((s) => s.id === id ? updated : s));
-      setToast({ msg: "운영 시간이 저장되었습니다.", ok: true });
-    } else {
-      setToast({ msg: "저장 실패", ok: false });
-    }
-    setEditingSlots(null);
-    setSlotsSaving(false);
-  }
-
-  async function toggleRentalAvailable(id: string, available: boolean) {
-    const res = await fetch(`/api/admin/rental-settings/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ available }),
-    });
-    if (res.ok) {
-      const updated: RentalSetting = await res.json();
-      setRentalSettings((prev) => prev.map((s) => s.id === id ? updated : s));
-    } else {
-      setToast({ msg: "상태 변경 실패", ok: false });
-    }
   }
 
   async function handleSeed() {
@@ -631,175 +542,6 @@ export default function AdminDashboard() {
             </div>
           </>
         )}
-
-        {/* ── 대여 설정 관리 ──────────────────────────────────────────────── */}
-        <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-100">
-            <h3 className="text-sm font-bold text-hwaseong-text">공간 · 장비 대여 설정</h3>
-            <p className="text-xs text-gray-400 mt-0.5">대여료를 클릭하면 바로 수정할 수 있습니다. 운영 여부 토글로 수요처 노출을 제어합니다.</p>
-          </div>
-
-          {/* 공간 */}
-          <div className="px-5 py-4 border-b border-gray-50">
-            <p className="text-xs font-bold text-gray-500 mb-3">🏢 교육 공간</p>
-            <div className="space-y-2">
-              {rentalSettings.filter((s) => s.type === "venue").map((venue) => (
-                <div key={venue.id} className={`rounded-xl border overflow-hidden ${venue.available ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"}`}>
-
-                  {/* 첫째 줄: 이름 + 대여료 + 토글 */}
-                  <div className="flex items-center gap-3 px-3.5 py-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-hwaseong-text">{venue.name}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">최대 {venue.capacity}명 · {venue.features.slice(0, 3).join(" · ")}</p>
-                    </div>
-                    {editingRental?.id === venue.id ? (
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <input
-                          type="number" min="0" step="1000" value={editingRental.fee}
-                          onChange={(e) => setEditingRental({ id: venue.id, fee: e.target.value })}
-                          className="w-24 px-2 py-1 border border-hwaseong-blue rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveRentalFee(venue.id, editingRental.fee);
-                            if (e.key === "Escape") setEditingRental(null);
-                          }}
-                        />
-                        <span className="text-xs text-gray-500">원/{venue.fee_unit}</span>
-                        <button onClick={() => saveRentalFee(venue.id, editingRental.fee)} disabled={rentalSaving} className="px-2.5 py-1 bg-hwaseong-blue text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-50">저장</button>
-                        <button onClick={() => setEditingRental(null)} className="px-2 py-1 text-xs text-gray-400 rounded-lg hover:bg-gray-100">취소</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setEditingRental({ id: venue.id, fee: String(venue.fee_per_use) })} className="text-sm font-bold text-hwaseong-blue hover:underline flex-shrink-0">
-                        {venue.fee_per_use.toLocaleString("ko-KR")}원/{venue.fee_unit}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => toggleRentalAvailable(venue.id, !venue.available)}
-                      className={`relative w-10 rounded-full transition-colors flex-shrink-0 ${venue.available ? "bg-green-500" : "bg-gray-300"}`}
-                      style={{ height: "22px" }}
-                      title={venue.available ? "운영 중" : "중단 중"}
-                    >
-                      <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${venue.available ? "translate-x-5" : "translate-x-0.5"}`} />
-                    </button>
-                  </div>
-
-                  {/* 둘째 줄: 운영 요일·시간 */}
-                  <div className="border-t border-gray-100 bg-gray-50/60 px-3.5 py-2.5">
-                    {editingSlots?.id === venue.id ? (
-                      <div className="space-y-3">
-                        {/* 요일 선택 */}
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {DAYS.map((d) => {
-                            const on = editingSlots.slots.days.includes(d.key);
-                            return (
-                              <button
-                                key={d.key}
-                                type="button"
-                                onClick={() => setEditingSlots((p) => {
-                                  if (!p) return p;
-                                  const days = on
-                                    ? p.slots.days.filter((x) => x !== d.key)
-                                    : [...p.slots.days, d.key];
-                                  return { ...p, slots: { ...p.slots, days } };
-                                })}
-                                className={`w-8 h-8 rounded-lg text-xs font-bold transition-colors ${on ? "bg-hwaseong-blue text-white" : "bg-white border border-gray-200 text-gray-500 hover:border-hwaseong-blue/40"}`}
-                              >{d.label}</button>
-                            );
-                          })}
-                        </div>
-                        {/* 시간 선택 */}
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="time" value={editingSlots.slots.start}
-                            onChange={(e) => setEditingSlots((p) => p ? { ...p, slots: { ...p.slots, start: e.target.value } } : p)}
-                            className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
-                          />
-                          <span className="text-xs text-gray-400">~</span>
-                          <input
-                            type="time" value={editingSlots.slots.end}
-                            onChange={(e) => setEditingSlots((p) => p ? { ...p, slots: { ...p.slots, end: e.target.value } } : p)}
-                            className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
-                          />
-                          <button onClick={() => saveSlots(venue.id, editingSlots.slots)} disabled={slotsSaving} className="px-3 py-1 bg-hwaseong-blue text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-50">저장</button>
-                          <button onClick={() => setEditingSlots(null)} className="px-2 py-1 text-xs text-gray-400 rounded-lg hover:bg-gray-100">취소</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-gray-500">
-                          📅 {formatSlots(venue.available_slots)}
-                        </span>
-                        <button
-                          onClick={() => setEditingSlots({
-                            id: venue.id,
-                            slots: venue.available_slots ?? { days: ["mon","tue","wed","thu","fri"], start: "09:00", end: "18:00" },
-                          })}
-                          className="text-[11px] text-hwaseong-blue hover:underline flex-shrink-0"
-                        >수정</button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* 장비 */}
-          <div className="px-5 py-4">
-            <p className="text-xs font-bold text-gray-500 mb-3">💻 장비</p>
-            <div className="space-y-2">
-              {rentalSettings.filter((s) => s.type === "equipment").map((eq) => (
-                <div key={eq.id} className={`flex items-center gap-3 px-3.5 py-3 rounded-xl border ${eq.available ? "border-gray-200 bg-white" : "border-gray-100 bg-gray-50 opacity-60"}`}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-hwaseong-text">{eq.name}</p>
-                    <p className="text-[11px] text-gray-400 mt-0.5">최대 {eq.max_quantity}대 대여 · {eq.features.join(" · ")}</p>
-                  </div>
-
-                  {editingRental?.id === eq.id ? (
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <input
-                        type="number"
-                        min="0"
-                        step="500"
-                        value={editingRental.fee}
-                        onChange={(e) => setEditingRental({ id: eq.id, fee: e.target.value })}
-                        className="w-20 px-2 py-1 border border-hwaseong-blue rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveRentalFee(eq.id, editingRental.fee);
-                          if (e.key === "Escape") setEditingRental(null);
-                        }}
-                      />
-                      <span className="text-xs text-gray-500">원/{eq.fee_unit}</span>
-                      <button
-                        onClick={() => saveRentalFee(eq.id, editingRental.fee)}
-                        disabled={rentalSaving}
-                        className="px-2.5 py-1 bg-hwaseong-blue text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-50"
-                      >저장</button>
-                      <button onClick={() => setEditingRental(null)} className="px-2 py-1 text-xs text-gray-400 rounded-lg hover:bg-gray-100">취소</button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setEditingRental({ id: eq.id, fee: String(eq.fee_per_use) })}
-                      className="text-sm font-bold text-hwaseong-blue hover:underline flex-shrink-0"
-                    >
-                      {eq.fee_per_use.toLocaleString("ko-KR")}원/{eq.fee_unit}
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => toggleRentalAvailable(eq.id, !eq.available)}
-                    className={`relative w-10 rounded-full transition-colors flex-shrink-0 ${eq.available ? "bg-green-500" : "bg-gray-300"}`}
-                    style={{ height: "22px" }}
-                    title={eq.available ? "운영 중 (클릭시 중단)" : "중단 중 (클릭시 운영)"}
-                  >
-                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${eq.available ? "translate-x-5" : "translate-x-0.5"}`} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
 
         {/* ── 샘플 데이터 ─────────────────────────────────────────────────── */}
         <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-5">

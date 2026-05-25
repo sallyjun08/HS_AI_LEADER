@@ -34,6 +34,44 @@ type SettlementReport = {
   } | null;
 };
 
+type InstructorFee = {
+  id: string;
+  attendance_count: number;
+  lecture_date: string | null;
+  submitted_at: string;
+  admin_approved_at: string;
+  instructor_fee: number;
+  instructor_fee_paid_at: string | null;
+  match: {
+    id: string;
+    title: string;
+    category: string;
+    leader: {
+      id: string;
+      profiles: { name: string; email: string } | null;
+    } | null;
+  } | null;
+};
+
+type RentalFee = {
+  id: string;
+  title: string;
+  category: string;
+  start_date: string;
+  status: string;
+  needs_venue: boolean;
+  rental_venue_id: string | null;
+  needs_equipment: boolean;
+  rental_equipment_count: number;
+  rental_notes: string | null;
+  rental_fee_total: number;
+  rental_fee_paid_at: string | null;
+  venue: { id: string; name: string; fee_per_use: number; fee_unit: string } | null;
+  equipment_fee_per_unit: number;
+  suggested_fee: number;
+  client: { name: string; email: string } | null;
+};
+
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
 const LOC_LABELS:  Record<string, string> = { offline: "대면", online: "온라인", hybrid: "혼합" };
@@ -49,6 +87,10 @@ function fmtDate(iso: string | null | undefined): string {
 function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtWon(n: number): string {
+  return n.toLocaleString("ko-KR") + "원";
 }
 
 function StarRating({ value }: { value: number | null }) {
@@ -113,21 +155,16 @@ function LectureCertificate({ report }: { report: SettlementReport }) {
 
   return (
     <div id="certificate-print" className="bg-white p-12 font-serif text-gray-900" style={{ width: "210mm", minHeight: "297mm" }}>
-      {/* 헤더 */}
       <div className="text-center mb-10">
         <p className="text-sm text-gray-500 mb-2">화성특례시</p>
         <h1 className="text-3xl font-black tracking-widest border-b-4 border-gray-900 pb-4 inline-block px-8">
           강 의 확 인 서
         </h1>
       </div>
-
-      {/* 공문 번호·발행일 */}
       <div className="flex justify-between text-sm text-gray-500 mb-8">
         <span>문서번호: 화성AI잇다-{report.id.slice(0, 8).toUpperCase()}</span>
         <span>발행일: {today}</span>
       </div>
-
-      {/* 수신 */}
       <table className="w-full border-collapse text-sm mb-8">
         <tbody>
           {[
@@ -148,21 +185,13 @@ function LectureCertificate({ report }: { report: SettlementReport }) {
           ))}
         </tbody>
       </table>
-
-      {/* 강의 내용 */}
       <div className="border border-gray-400 mb-10">
         <div className="bg-gray-100 px-4 py-2 border-b border-gray-400 font-bold text-sm">강의 결과 요약</div>
-        <div className="px-4 py-4 text-sm leading-relaxed min-h-[80px]">
-          {report.report_text || "—"}
-        </div>
+        <div className="px-4 py-4 text-sm leading-relaxed min-h-[80px]">{report.report_text || "—"}</div>
       </div>
-
-      {/* 확인 문구 */}
       <p className="text-sm leading-loose text-center mb-12">
         위와 같이 화성 AI 시민리더 잇다(IT-DA) 플랫폼을 통하여 강의가 진행되었음을 확인합니다.
       </p>
-
-      {/* 날인 */}
       <div className="flex justify-end">
         <div className="text-center">
           <p className="text-sm mb-8">{today}</p>
@@ -174,473 +203,6 @@ function LectureCertificate({ report }: { report: SettlementReport }) {
         </div>
       </div>
     </div>
-  );
-}
-
-// ─── 메인 컴포넌트 ─────────────────────────────────────────────────────────
-
-export default function SettlementPage() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-
-  const [reports, setReports] = useState<SettlementReport[]>([]);
-  const [fetching, setFetching] = useState(true);
-  const [selected, setSelected] = useState<SettlementReport | null>(null);
-  const [filterApproved, setFilterApproved] = useState<"all" | "approved" | "pending">("all");
-  const [search, setSearch] = useState("");
-  const [approving, setApproving] = useState(false);
-  const [noteInput, setNoteInput] = useState("");
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
-  const [showCert, setShowCert] = useState(false);
-  const printRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!loading && (!user || user.role !== "admin")) router.replace("/login");
-  }, [loading, user, router]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  useEffect(() => {
-    if (selected) setNoteInput(selected.admin_note ?? "");
-  }, [selected?.id]);
-
-  async function fetchReports() {
-    setFetching(true);
-    const res = await fetch("/api/admin/settlement/reports");
-    const data = await res.json();
-    setReports(Array.isArray(data) ? data : []);
-    setFetching(false);
-  }
-
-  useEffect(() => {
-    if (user) fetchReports();
-  }, [user]);
-
-  const filtered = useMemo(() => {
-    let list = reports;
-    if (filterApproved === "approved") list = list.filter((r) => r.admin_approved_at !== null);
-    if (filterApproved === "pending")  list = list.filter((r) => r.admin_approved_at === null);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (r) =>
-          (r.match?.title ?? "").toLowerCase().includes(q) ||
-          (r.match?.leader?.profiles?.name ?? "").toLowerCase().includes(q) ||
-          (r.match?.client?.name ?? "").toLowerCase().includes(q) ||
-          (r.match?.address ?? "").toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [reports, filterApproved, search]);
-
-  const summaryApproved = useMemo(() => reports.filter((r) => r.admin_approved_at !== null).length, [reports]);
-  const summaryPending  = useMemo(() => reports.filter((r) => r.admin_approved_at === null).length, [reports]);
-  const summaryAttendees = useMemo(() => reports.reduce((s, r) => s + r.attendance_count, 0), [reports]);
-  const summaryRating    = useMemo(() => {
-    const rated = reports.filter((r) => r.rating_from_client !== null);
-    if (rated.length === 0) return null;
-    return (rated.reduce((s, r) => s + Number(r.rating_from_client), 0) / rated.length).toFixed(2);
-  }, [reports]);
-
-  async function handleApprove() {
-    if (!selected || approving) return;
-    setApproving(true);
-    const res = await fetch(`/api/admin/settlement/${selected.id}/approve`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: noteInput }),
-    });
-    if (res.ok) {
-      const updated = await res.json();
-      setReports((prev) => prev.map((r) => r.id === selected.id ? { ...r, ...updated } : r));
-      setSelected((prev) => prev ? { ...prev, ...updated } : prev);
-      setToast({ msg: "보고서가 승인되었습니다.", ok: true });
-    } else {
-      const err = await res.json().catch(() => ({}));
-      setToast({ msg: err.error ?? "승인 중 오류가 발생했습니다.", ok: false });
-    }
-    setApproving(false);
-  }
-
-  function handlePrint() {
-    setShowCert(true);
-    setTimeout(() => window.print(), 400);
-  }
-
-  if (loading || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <Head><title>활동 결과 및 정산 관리 | 화성 AI 시민리더 잇다</title></Head>
-
-      {/* 인쇄 전용 강의확인서 — 화면에는 hidden, 인쇄 시 표시 */}
-      {showCert && selected && (
-        <div className="hidden print:block" ref={printRef}>
-          <LectureCertificate report={selected} />
-        </div>
-      )}
-
-      <DashboardLayout pageTitle="활동 결과 및 정산 관리">
-
-        {/* ── 페이지 헤더 ── */}
-        <div className="bg-gradient-to-br from-emerald-700 to-teal-600 rounded-3xl p-5 flex items-center gap-4">
-          <div className="w-12 h-12 bg-white/10 border border-white/20 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0">💰</div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-black text-white">활동 결과 및 정산 관리</h2>
-            <p className="text-emerald-200 text-xs mt-0.5">완료된 강의 활동 보고서를 검토하고 정산 처리합니다.</p>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {summaryPending > 0 && (
-              <span className="bg-amber-400 text-white text-xs font-bold px-2.5 py-1 rounded-full animate-pulse">
-                미승인 {summaryPending}건
-              </span>
-            )}
-            <button
-              onClick={fetchReports}
-              disabled={fetching}
-              className="text-xs bg-white/10 border border-white/30 text-white px-3 py-1.5 rounded-xl hover:bg-white/20 transition-colors disabled:opacity-50"
-            >
-              {fetching ? "로딩..." : "↺ 새로고침"}
-            </button>
-          </div>
-        </div>
-
-        {/* ── 요약 카드 ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { icon: "📋", label: "전체 보고서",   value: reports.length,   color: "text-hwaseong-text", bg: "bg-blue-50",   border: "border-blue-100" },
-            { icon: "✅", label: "승인 완료",      value: summaryApproved,  color: "text-green-600",    bg: "bg-green-50",  border: "border-green-100" },
-            { icon: "⏳", label: "승인 대기",      value: summaryPending,   color: summaryPending > 0 ? "text-amber-600" : "text-gray-400", bg: summaryPending > 0 ? "bg-amber-50" : "bg-gray-50", border: summaryPending > 0 ? "border-amber-200" : "border-gray-100" },
-            { icon: "👥", label: "누적 수강생",    value: `${summaryAttendees}명`, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100" },
-          ].map((c) => (
-            <div key={c.label} className={`${c.bg} ${c.border} border rounded-2xl p-5 shadow-sm`}>
-              <div className="text-2xl mb-2">{c.icon}</div>
-              <p className={`text-3xl font-black ${c.color}`}>{c.value}</p>
-              <p className="text-xs text-gray-500 mt-1">{c.label}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* ── 메인 2분할 ── */}
-        <div className="grid gap-4 lg:grid-cols-5">
-
-          {/* 좌측 목록 (2/5) */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col" style={{ maxHeight: "calc(100vh - 320px)" }}>
-
-            {/* 목록 헤더 */}
-            <div className="p-4 border-b border-gray-100 space-y-3 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-hwaseong-text text-sm">보고서 목록</h3>
-                <button
-                  onClick={() => exportCSV(filtered)}
-                  className="flex items-center gap-1.5 text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-xl hover:bg-emerald-700 transition-colors"
-                >
-                  <span>📊</span> 엑셀 내보내기
-                </button>
-              </div>
-
-              {/* 필터 탭 */}
-              <div className="flex gap-1">
-                {(["all", "pending", "approved"] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilterApproved(f)}
-                    className={`flex-1 text-xs font-semibold py-1.5 rounded-xl transition-colors ${
-                      filterApproved === f
-                        ? "bg-hwaseong-blue text-white"
-                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                    }`}
-                  >
-                    {f === "all" ? `전체 ${reports.length}` : f === "pending" ? `미승인 ${summaryPending}` : `승인 ${summaryApproved}`}
-                  </button>
-                ))}
-              </div>
-
-              {/* 검색 */}
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="강의 제목·강사·수요처·주소"
-                  className="w-full pl-7 pr-7 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
-                />
-                {search && (
-                  <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 text-xs">✕</button>
-                )}
-              </div>
-            </div>
-
-            {/* 목록 */}
-            <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
-              {fetching ? (
-                <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
-              ) : filtered.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-                  <p className="text-3xl mb-1">📋</p>
-                  <p className="text-xs">보고서가 없습니다.</p>
-                </div>
-              ) : (
-                filtered.map((r) => {
-                  const isSelected = selected?.id === r.id;
-                  const approved = r.admin_approved_at !== null;
-                  return (
-                    <button
-                      key={r.id}
-                      onClick={() => setSelected(isSelected ? null : r)}
-                      className={`w-full text-left px-4 py-3.5 transition-colors hover:bg-gray-50 ${isSelected ? "bg-blue-50 border-l-4 border-hwaseong-blue" : "border-l-4 border-transparent"}`}
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <p className="text-xs font-bold text-hwaseong-text leading-tight line-clamp-2 flex-1">
-                          {r.match?.title ?? "—"}
-                        </p>
-                        <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                          approved ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                        }`}>
-                          {approved ? "✓ 승인" : "미승인"}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-gray-400 mb-1.5 truncate">
-                        🏅 {r.match?.leader?.profiles?.name ?? "—"} · 🏢 {r.match?.client?.name ?? "—"}
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-gray-400">📅 {fmtDate(r.lecture_date ?? r.match?.start_date)}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-gray-400">👥 {r.attendance_count}명</span>
-                          {r.rating_from_client !== null && (
-                            <span className="text-[10px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* 우측 상세 (3/5) */}
-          <div className="lg:col-span-3">
-            {!selected ? (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center p-12 h-full min-h-[400px]">
-                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-4xl mb-4">💰</div>
-                <p className="text-base font-bold text-gray-400 mb-1">보고서를 선택하세요</p>
-                <p className="text-sm text-gray-300">좌측 목록에서 보고서를 클릭하면<br />증빙 자료와 정산 정보를 확인할 수 있습니다.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-
-                {/* 기본 정보 카드 */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  <div className="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          selected.admin_approved_at ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                        }`}>
-                          {selected.admin_approved_at ? "✓ 승인 완료" : "⏳ 승인 대기"}
-                        </span>
-                        <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
-                          {selected.match?.category ?? "—"}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-hwaseong-text text-base leading-tight">{selected.match?.title ?? "—"}</h3>
-                    </div>
-                    <button onClick={() => setSelected(null)} className="flex-shrink-0 w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 text-sm">✕</button>
-                  </div>
-
-                  <div className="p-5 grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                    {[
-                      { label: "강사",         value: selected.match?.leader?.profiles?.name ?? "—" },
-                      { label: "수요처",        value: selected.match?.client?.name ?? "—" },
-                      { label: "강의 일자",     value: fmtDate(selected.lecture_date ?? selected.match?.start_date) },
-                      { label: "강의 주소",     value: selected.match?.address ?? "—" },
-                      { label: "강의 형태",     value: selected.match?.location_type ? (LOC_LABELS[selected.match.location_type] ?? selected.match.location_type) : "—" },
-                      { label: "진행 방식",     value: selected.match?.frequency ? (FREQ_LABELS[selected.match.frequency] ?? selected.match.frequency) : "—" },
-                      { label: "참석 인원",     value: `${selected.attendance_count}명` },
-                      { label: "보고서 제출일", value: fmtDateTime(selected.submitted_at) },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex gap-2">
-                        <span className="text-gray-400 text-xs w-24 flex-shrink-0 pt-0.5">{label}</span>
-                        <span className="text-hwaseong-text text-xs font-semibold">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 만족도 + 강의 일지 */}
-                <div className="grid sm:grid-cols-2 gap-4">
-                  {/* 수요처 만족도 */}
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">수요처 만족도 평점</h4>
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center flex-shrink-0">
-                        <span className="text-2xl font-black text-amber-500">
-                          {selected.rating_from_client !== null ? Number(selected.rating_from_client).toFixed(1) : "—"}
-                        </span>
-                      </div>
-                      <div>
-                        <StarRating value={selected.rating_from_client} />
-                        <p className="text-[11px] text-gray-400 mt-1.5">
-                          {selected.rating_from_client !== null
-                            ? selected.rating_from_client >= 4.5 ? "매우 만족"
-                              : selected.rating_from_client >= 3.5 ? "만족"
-                              : selected.rating_from_client >= 2.5 ? "보통"
-                              : "아쉬움"
-                            : "수요처가 아직 평가하지 않았습니다."}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 강의 일지 */}
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">강의 일지</h4>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      {selected.report_text || <span className="text-gray-300">강사가 작성한 강의 일지가 없습니다.</span>}
-                    </p>
-                  </div>
-                </div>
-
-                {/* 현장 사진 */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
-                    현장 사진 ({selected.image_urls.length}장)
-                  </h4>
-                  {selected.image_urls.length === 0 ? (
-                    <div className="h-24 flex items-center justify-center text-gray-300 text-sm border-2 border-dashed border-gray-200 rounded-xl">
-                      <span>등록된 현장 사진이 없습니다.</span>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                      {selected.image_urls.map((url, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setLightboxImg(url)}
-                          className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 hover:ring-2 hover:ring-hwaseong-blue/60 transition-all group"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={url} alt={`현장 사진 ${i + 1}`} className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                            <span className="text-white opacity-0 group-hover:opacity-100 text-lg">🔍</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 관리자 메모 + 승인/추출 버튼 */}
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide">관리자 검토</h4>
-
-                  {selected.admin_approved_at && (
-                    <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2.5 flex items-center gap-2">
-                      <span className="text-green-600">✅</span>
-                      <div>
-                        <p className="text-xs font-bold text-green-700">승인 완료</p>
-                        <p className="text-[11px] text-green-600">{fmtDateTime(selected.admin_approved_at)}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {selected.admin_note && (
-                    <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                      <p className="text-[11px] text-gray-500 mb-0.5">관리자 메모</p>
-                      <p className="text-xs text-gray-700">{selected.admin_note}</p>
-                    </div>
-                  )}
-
-                  {!selected.admin_approved_at && (
-                    <div className="space-y-2">
-                      <textarea
-                        value={noteInput}
-                        onChange={(e) => setNoteInput(e.target.value)}
-                        placeholder="검토 메모 (선택 사항) — 정산 특이사항, 감면 사유 등"
-                        rows={2}
-                        className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none"
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    {/* 보고서 승인 버튼 */}
-                    {!selected.admin_approved_at ? (
-                      <button
-                        onClick={handleApprove}
-                        disabled={approving}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
-                      >
-                        {approving
-                          ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          : <span>✅</span>}
-                        {approving ? "처리 중..." : "보고서 승인"}
-                      </button>
-                    ) : (
-                      <div className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-100 text-gray-400 text-sm font-semibold rounded-xl cursor-default">
-                        <span>✅</span> 승인 완료
-                      </div>
-                    )}
-
-                    {/* 서류 추출 드롭다운 */}
-                    <ExportDropdown
-                      onPDF={handlePrint}
-                      onCSV={() => exportCSV([selected])}
-                    />
-                  </div>
-                </div>
-
-              </div>
-            )}
-          </div>
-        </div>
-
-      </DashboardLayout>
-
-      {/* 이미지 라이트박스 */}
-      {lightboxImg && (
-        <div
-          className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setLightboxImg(null)}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={lightboxImg} alt="현장 사진" className="max-w-full max-h-full rounded-2xl shadow-2xl" />
-          <button className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300">✕</button>
-        </div>
-      )}
-
-      {/* Toast */}
-      {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white text-sm font-semibold max-w-sm ${
-          toast.ok ? "bg-green-600" : "bg-red-500"
-        }`}>
-          <span>{toast.ok ? "✅" : "❌"}</span>
-          <span className="flex-1">{toast.msg}</span>
-          <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100">✕</button>
-        </div>
-      )}
-
-      {/* 인쇄 시 확인서만 보이는 전역 스타일 */}
-      <style jsx global>{`
-        @media print {
-          body > * { display: none !important; }
-          #certificate-print { display: block !important; }
-          .hidden.print\\:block { display: block !important; }
-        }
-      `}</style>
-    </>
   );
 }
 
@@ -686,5 +248,881 @@ function ExportDropdown({ onPDF, onCSV }: { onPDF: () => void; onCSV: () => void
         </>
       )}
     </div>
+  );
+}
+
+// ─── 인라인 금액 편집 셀 ───────────────────────────────────────────────────
+
+function FeeCell({
+  id, fee, editing, onStartEdit, onSave, onCancel, saving,
+}: {
+  id: string;
+  fee: number;
+  editing: { id: string; fee: string } | null;
+  onStartEdit: (id: string, fee: number) => void;
+  onSave: (id: string, fee: string) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  if (editing?.id === id) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          type="number" min="0" step="1000"
+          value={editing.fee}
+          onChange={(e) => onStartEdit(id, Number(e.target.value))}
+          className="w-24 px-2 py-1 border border-hwaseong-blue rounded-lg text-xs text-right focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave(id, editing.fee);
+            if (e.key === "Escape") onCancel();
+          }}
+        />
+        <span className="text-xs text-gray-400">원</span>
+        <button onClick={() => onSave(id, editing.fee)} disabled={saving} className="px-2 py-1 bg-hwaseong-blue text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-50">저장</button>
+        <button onClick={onCancel} className="px-1.5 py-1 text-xs text-gray-400 rounded-lg hover:bg-gray-100">✕</button>
+      </div>
+    );
+  }
+  return (
+    <button
+      onClick={() => onStartEdit(id, fee)}
+      className="flex items-center gap-1 group"
+      title="클릭해서 수정"
+    >
+      <span className={`text-sm font-bold ${fee > 0 ? "text-hwaseong-blue" : "text-gray-300"}`}>
+        {fee > 0 ? fmtWon(fee) : "미입력"}
+      </span>
+      <span className="text-gray-300 group-hover:text-gray-500 text-xs">✏️</span>
+    </button>
+  );
+}
+
+// ─── 메인 컴포넌트 ─────────────────────────────────────────────────────────
+
+export default function SettlementPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  // ── 탭 ──
+  const [activeTab, setActiveTab] = useState<"reports" | "instructor" | "rental">("reports");
+
+  // ── 보고서 승인 탭 ──
+  const [reports, setReports] = useState<SettlementReport[]>([]);
+  const [fetching, setFetching] = useState(true);
+  const [selected, setSelected] = useState<SettlementReport | null>(null);
+  const [filterApproved, setFilterApproved] = useState<"all" | "approved" | "pending">("all");
+  const [search, setSearch] = useState("");
+  const [approving, setApproving] = useState(false);
+  const [noteInput, setNoteInput] = useState("");
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [showCert, setShowCert] = useState(false);
+  const printRef = useRef<HTMLDivElement>(null);
+
+  // ── 강사료 정산 탭 ──
+  const [instructorFees, setInstructorFees] = useState<InstructorFee[]>([]);
+  const [iFeeFilter, setIFeeFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [editingIFee, setEditingIFee] = useState<{ id: string; fee: string } | null>(null);
+  const [iFeeSaving, setIFeeSaving] = useState(false);
+
+  // ── 대여료 정산 탭 ──
+  const [rentalFees, setRentalFees] = useState<RentalFee[]>([]);
+  const [rFeeFilter, setRFeeFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [editingRFee, setEditingRFee] = useState<{ id: string; fee: string } | null>(null);
+  const [rFeeSaving, setRFeeSaving] = useState(false);
+
+  // ── 공통 ──
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!loading && (!user || user.role !== "admin")) router.replace("/login");
+  }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (selected) setNoteInput(selected.admin_note ?? "");
+  }, [selected?.id]);
+
+  async function fetchAll() {
+    setFetching(true);
+    const [rpts, ifees, rfees] = await Promise.all([
+      fetch("/api/admin/settlement/reports").then((r) => r.json()),
+      fetch("/api/admin/settlement/instructor-fees").then((r) => r.json()),
+      fetch("/api/admin/settlement/rental-fees").then((r) => r.json()),
+    ]);
+    setReports(Array.isArray(rpts) ? rpts : []);
+    setInstructorFees(Array.isArray(ifees) ? ifees : []);
+    setRentalFees(Array.isArray(rfees) ? rfees : []);
+    setFetching(false);
+  }
+
+  useEffect(() => {
+    if (user) fetchAll();
+  }, [user]);
+
+  // ── 보고서 승인 ──
+
+  const filtered = useMemo(() => {
+    let list = reports;
+    if (filterApproved === "approved") list = list.filter((r) => r.admin_approved_at !== null);
+    if (filterApproved === "pending")  list = list.filter((r) => r.admin_approved_at === null);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (r) =>
+          (r.match?.title ?? "").toLowerCase().includes(q) ||
+          (r.match?.leader?.profiles?.name ?? "").toLowerCase().includes(q) ||
+          (r.match?.client?.name ?? "").toLowerCase().includes(q) ||
+          (r.match?.address ?? "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [reports, filterApproved, search]);
+
+  const summaryApproved  = useMemo(() => reports.filter((r) => r.admin_approved_at !== null).length, [reports]);
+  const summaryPending   = useMemo(() => reports.filter((r) => r.admin_approved_at === null).length, [reports]);
+  const summaryAttendees = useMemo(() => reports.reduce((s, r) => s + r.attendance_count, 0), [reports]);
+
+  async function handleApprove() {
+    if (!selected || approving) return;
+    setApproving(true);
+    const res = await fetch(`/api/admin/settlement/${selected.id}/approve`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: noteInput }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setReports((prev) => prev.map((r) => r.id === selected.id ? { ...r, ...updated } : r));
+      setSelected((prev) => prev ? { ...prev, ...updated } : prev);
+      setToast({ msg: "보고서가 승인되었습니다.", ok: true });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      setToast({ msg: err.error ?? "승인 중 오류가 발생했습니다.", ok: false });
+    }
+    setApproving(false);
+  }
+
+  function handlePrint() {
+    setShowCert(true);
+    setTimeout(() => window.print(), 400);
+  }
+
+  // ── 강사료 정산 ──
+
+  const filteredIFees = useMemo(() => {
+    if (iFeeFilter === "paid")   return instructorFees.filter((r) => r.instructor_fee_paid_at !== null);
+    if (iFeeFilter === "unpaid") return instructorFees.filter((r) => r.instructor_fee_paid_at === null);
+    return instructorFees;
+  }, [instructorFees, iFeeFilter]);
+
+  const iUnpaidCount  = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at === null).length, [instructorFees]);
+  const iUnpaidTotal  = useMemo(() => instructorFees.filter((r) => !r.instructor_fee_paid_at).reduce((s, r) => s + r.instructor_fee, 0), [instructorFees]);
+  const iPaidTotal    = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at).reduce((s, r) => s + r.instructor_fee, 0), [instructorFees]);
+
+  async function saveIFee(id: string, feeStr: string) {
+    const fee = Number(feeStr);
+    if (isNaN(fee) || fee < 0) return;
+    setIFeeSaving(true);
+    const res = await fetch(`/api/admin/settlement/${id}/instructor-fee`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fee }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setInstructorFees((prev) => prev.map((r) => r.id === id ? { ...r, ...updated } : r));
+      setToast({ msg: "강사료가 저장되었습니다.", ok: true });
+    } else {
+      setToast({ msg: "저장 실패", ok: false });
+    }
+    setEditingIFee(null);
+    setIFeeSaving(false);
+  }
+
+  async function markIFeePaid(id: string, paid: boolean) {
+    const res = await fetch(`/api/admin/settlement/${id}/instructor-fee`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markPaid: paid }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setInstructorFees((prev) => prev.map((r) => r.id === id ? { ...r, ...updated } : r));
+      setToast({ msg: paid ? "지급 처리되었습니다." : "지급 취소되었습니다.", ok: true });
+    } else {
+      setToast({ msg: "처리 실패", ok: false });
+    }
+  }
+
+  // ── 대여료 정산 ──
+
+  const filteredRFees = useMemo(() => {
+    if (rFeeFilter === "paid")   return rentalFees.filter((r) => r.rental_fee_paid_at !== null);
+    if (rFeeFilter === "unpaid") return rentalFees.filter((r) => r.rental_fee_paid_at === null);
+    return rentalFees;
+  }, [rentalFees, rFeeFilter]);
+
+  const rUnpaidCount = useMemo(() => rentalFees.filter((r) => r.rental_fee_paid_at === null).length, [rentalFees]);
+  const rUnpaidTotal = useMemo(() => rentalFees.filter((r) => !r.rental_fee_paid_at).reduce((s, r) => s + r.rental_fee_total, 0), [rentalFees]);
+  const rPaidTotal   = useMemo(() => rentalFees.filter((r) => r.rental_fee_paid_at).reduce((s, r) => s + r.rental_fee_total, 0), [rentalFees]);
+
+  async function saveRFee(id: string, feeStr: string) {
+    const fee = Number(feeStr);
+    if (isNaN(fee) || fee < 0) return;
+    setRFeeSaving(true);
+    const res = await fetch(`/api/admin/settlement/rental-fee/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fee }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setRentalFees((prev) => prev.map((r) => r.id === id ? { ...r, ...updated } : r));
+      setToast({ msg: "대여료가 저장되었습니다.", ok: true });
+    } else {
+      setToast({ msg: "저장 실패", ok: false });
+    }
+    setEditingRFee(null);
+    setRFeeSaving(false);
+  }
+
+  async function markRFeePaid(id: string, paid: boolean) {
+    const res = await fetch(`/api/admin/settlement/rental-fee/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markPaid: paid }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setRentalFees((prev) => prev.map((r) => r.id === id ? { ...r, ...updated } : r));
+      setToast({ msg: paid ? "수납 처리되었습니다." : "수납 취소되었습니다.", ok: true });
+    } else {
+      setToast({ msg: "처리 실패", ok: false });
+    }
+  }
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Head><title>활동 결과 및 정산 관리 | 화성 AI 시민리더 잇다</title></Head>
+
+      {showCert && selected && (
+        <div className="hidden print:block" ref={printRef}>
+          <LectureCertificate report={selected} />
+        </div>
+      )}
+
+      <DashboardLayout pageTitle="활동 결과 및 정산 관리">
+
+        {/* ── 페이지 헤더 ── */}
+        <div className="bg-gradient-to-br from-emerald-700 to-teal-600 rounded-3xl p-5 flex items-center gap-4">
+          <div className="w-12 h-12 bg-white/10 border border-white/20 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0">💰</div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-lg font-black text-white">활동 결과 및 정산 관리</h2>
+            <p className="text-emerald-200 text-xs mt-0.5">보고서 승인 · 강사료 지급 · 대여료 수납을 통합 관리합니다.</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {summaryPending > 0 && (
+              <span className="bg-amber-400 text-white text-xs font-bold px-2.5 py-1 rounded-full animate-pulse">
+                미승인 {summaryPending}건
+              </span>
+            )}
+            {iUnpaidCount > 0 && (
+              <span className="bg-blue-400 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                강사료 미지급 {iUnpaidCount}건
+              </span>
+            )}
+            {rUnpaidCount > 0 && (
+              <span className="bg-orange-400 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                대여료 미수납 {rUnpaidCount}건
+              </span>
+            )}
+            <button
+              onClick={fetchAll}
+              disabled={fetching}
+              className="text-xs bg-white/10 border border-white/30 text-white px-3 py-1.5 rounded-xl hover:bg-white/20 transition-colors disabled:opacity-50"
+            >
+              {fetching ? "로딩..." : "↺ 새로고침"}
+            </button>
+          </div>
+        </div>
+
+        {/* ── 탭 네비게이션 ── */}
+        <div className="flex gap-2 border-b border-gray-200 pb-0">
+          {([
+            { key: "reports",    label: "📋 보고서 승인",  badge: summaryPending },
+            { key: "instructor", label: "💵 강사료 정산",  badge: iUnpaidCount },
+            { key: "rental",     label: "🏢 대여료 정산",  badge: rUnpaidCount },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-t-xl border-b-2 transition-colors ${
+                activeTab === tab.key
+                  ? "border-hwaseong-blue text-hwaseong-blue bg-blue-50/60"
+                  : "border-transparent text-gray-500 hover:text-hwaseong-blue"
+              }`}
+            >
+              {tab.label}
+              {tab.badge > 0 && (
+                <span className="min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1">
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════
+            탭 1: 보고서 승인
+        ══════════════════════════════════════════════════════════ */}
+        {activeTab === "reports" && (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { icon: "📋", label: "전체 보고서", value: reports.length,   color: "text-hwaseong-text", bg: "bg-blue-50",   border: "border-blue-100" },
+                { icon: "✅", label: "승인 완료",   value: summaryApproved,  color: "text-green-600",    bg: "bg-green-50",  border: "border-green-100" },
+                { icon: "⏳", label: "승인 대기",   value: summaryPending,   color: summaryPending > 0 ? "text-amber-600" : "text-gray-400", bg: summaryPending > 0 ? "bg-amber-50" : "bg-gray-50", border: summaryPending > 0 ? "border-amber-200" : "border-gray-100" },
+                { icon: "👥", label: "누적 수강생", value: `${summaryAttendees}명`, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100" },
+              ].map((c) => (
+                <div key={c.label} className={`${c.bg} ${c.border} border rounded-2xl p-5 shadow-sm`}>
+                  <div className="text-2xl mb-2">{c.icon}</div>
+                  <p className={`text-3xl font-black ${c.color}`}>{c.value}</p>
+                  <p className="text-xs text-gray-500 mt-1">{c.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-5">
+              {/* 좌측 목록 */}
+              <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col" style={{ maxHeight: "calc(100vh - 380px)" }}>
+                <div className="p-4 border-b border-gray-100 space-y-3 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-hwaseong-text text-sm">보고서 목록</h3>
+                    <button
+                      onClick={() => exportCSV(filtered)}
+                      className="flex items-center gap-1.5 text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-xl hover:bg-emerald-700 transition-colors"
+                    >
+                      <span>📊</span> 엑셀 내보내기
+                    </button>
+                  </div>
+                  <div className="flex gap-1">
+                    {(["all", "pending", "approved"] as const).map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setFilterApproved(f)}
+                        className={`flex-1 text-xs font-semibold py-1.5 rounded-xl transition-colors ${
+                          filterApproved === f ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                        }`}
+                      >
+                        {f === "all" ? `전체 ${reports.length}` : f === "pending" ? `미승인 ${summaryPending}` : `승인 ${summaryApproved}`}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                    <input
+                      type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                      placeholder="강의 제목·강사·수요처·주소"
+                      className="w-full pl-7 pr-7 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
+                    />
+                    {search && (
+                      <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 text-xs">✕</button>
+                    )}
+                  </div>
+                </div>
+                <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+                  {fetching ? (
+                    <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
+                  ) : filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 text-gray-300">
+                      <p className="text-3xl mb-1">📋</p>
+                      <p className="text-xs">보고서가 없습니다.</p>
+                    </div>
+                  ) : (
+                    filtered.map((r) => {
+                      const isSelected = selected?.id === r.id;
+                      const approved = r.admin_approved_at !== null;
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => setSelected(isSelected ? null : r)}
+                          className={`w-full text-left px-4 py-3.5 transition-colors hover:bg-gray-50 ${isSelected ? "bg-blue-50 border-l-4 border-hwaseong-blue" : "border-l-4 border-transparent"}`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <p className="text-xs font-bold text-hwaseong-text leading-tight line-clamp-2 flex-1">{r.match?.title ?? "—"}</p>
+                            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${approved ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                              {approved ? "✓ 승인" : "미승인"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-400 mb-1.5 truncate">
+                            🏅 {r.match?.leader?.profiles?.name ?? "—"} · 🏢 {r.match?.client?.name ?? "—"}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-gray-400">📅 {fmtDate(r.lecture_date ?? r.match?.start_date)}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-gray-400">👥 {r.attendance_count}명</span>
+                              {r.rating_from_client !== null && (
+                                <span className="text-[10px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* 우측 상세 */}
+              <div className="lg:col-span-3">
+                {!selected ? (
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center p-12 h-full min-h-[400px]">
+                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center text-4xl mb-4">💰</div>
+                    <p className="text-base font-bold text-gray-400 mb-1">보고서를 선택하세요</p>
+                    <p className="text-sm text-gray-300">좌측 목록에서 보고서를 클릭하면<br />증빙 자료와 정산 정보를 확인할 수 있습니다.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                      <div className="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${selected.admin_approved_at ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                              {selected.admin_approved_at ? "✓ 승인 완료" : "⏳ 승인 대기"}
+                            </span>
+                            <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{selected.match?.category ?? "—"}</span>
+                          </div>
+                          <h3 className="font-bold text-hwaseong-text text-base leading-tight">{selected.match?.title ?? "—"}</h3>
+                        </div>
+                        <button onClick={() => setSelected(null)} className="flex-shrink-0 w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 text-sm">✕</button>
+                      </div>
+                      <div className="p-5 grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                        {[
+                          { label: "강사",         value: selected.match?.leader?.profiles?.name ?? "—" },
+                          { label: "수요처",        value: selected.match?.client?.name ?? "—" },
+                          { label: "강의 일자",     value: fmtDate(selected.lecture_date ?? selected.match?.start_date) },
+                          { label: "강의 주소",     value: selected.match?.address ?? "—" },
+                          { label: "강의 형태",     value: selected.match?.location_type ? (LOC_LABELS[selected.match.location_type] ?? selected.match.location_type) : "—" },
+                          { label: "진행 방식",     value: selected.match?.frequency ? (FREQ_LABELS[selected.match.frequency] ?? selected.match.frequency) : "—" },
+                          { label: "참석 인원",     value: `${selected.attendance_count}명` },
+                          { label: "보고서 제출일", value: fmtDateTime(selected.submitted_at) },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="flex gap-2">
+                            <span className="text-gray-400 text-xs w-24 flex-shrink-0 pt-0.5">{label}</span>
+                            <span className="text-hwaseong-text text-xs font-semibold">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">수요처 만족도 평점</h4>
+                        <div className="flex items-center gap-4">
+                          <div className="w-16 h-16 rounded-2xl bg-amber-50 flex items-center justify-center flex-shrink-0">
+                            <span className="text-2xl font-black text-amber-500">
+                              {selected.rating_from_client !== null ? Number(selected.rating_from_client).toFixed(1) : "—"}
+                            </span>
+                          </div>
+                          <div>
+                            <StarRating value={selected.rating_from_client} />
+                            <p className="text-[11px] text-gray-400 mt-1.5">
+                              {selected.rating_from_client !== null
+                                ? selected.rating_from_client >= 4.5 ? "매우 만족"
+                                  : selected.rating_from_client >= 3.5 ? "만족"
+                                  : selected.rating_from_client >= 2.5 ? "보통"
+                                  : "아쉬움"
+                                : "수요처가 아직 평가하지 않았습니다."}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">강의 일지</h4>
+                        <p className="text-xs text-gray-600 leading-relaxed">
+                          {selected.report_text || <span className="text-gray-300">강사가 작성한 강의 일지가 없습니다.</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
+                        현장 사진 ({selected.image_urls.length}장)
+                      </h4>
+                      {selected.image_urls.length === 0 ? (
+                        <div className="h-24 flex items-center justify-center text-gray-300 text-sm border-2 border-dashed border-gray-200 rounded-xl">
+                          <span>등록된 현장 사진이 없습니다.</span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                          {selected.image_urls.map((url, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setLightboxImg(url)}
+                              className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 hover:ring-2 hover:ring-hwaseong-blue/60 transition-all group"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={url} alt={`현장 사진 ${i + 1}`} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                <span className="text-white opacity-0 group-hover:opacity-100 text-lg">🔍</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide">관리자 검토</h4>
+                      {selected.admin_approved_at && (
+                        <div className="bg-green-50 border border-green-200 rounded-xl px-3 py-2.5 flex items-center gap-2">
+                          <span className="text-green-600">✅</span>
+                          <div>
+                            <p className="text-xs font-bold text-green-700">승인 완료</p>
+                            <p className="text-[11px] text-green-600">{fmtDateTime(selected.admin_approved_at)}</p>
+                          </div>
+                        </div>
+                      )}
+                      {selected.admin_note && (
+                        <div className="bg-gray-50 rounded-xl px-3 py-2.5">
+                          <p className="text-[11px] text-gray-500 mb-0.5">관리자 메모</p>
+                          <p className="text-xs text-gray-700">{selected.admin_note}</p>
+                        </div>
+                      )}
+                      {!selected.admin_approved_at && (
+                        <textarea
+                          value={noteInput}
+                          onChange={(e) => setNoteInput(e.target.value)}
+                          placeholder="검토 메모 (선택 사항) — 정산 특이사항, 감면 사유 등"
+                          rows={2}
+                          className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none"
+                        />
+                      )}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        {!selected.admin_approved_at ? (
+                          <button
+                            onClick={handleApprove}
+                            disabled={approving}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+                          >
+                            {approving ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span>✅</span>}
+                            {approving ? "처리 중..." : "보고서 승인"}
+                          </button>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-100 text-gray-400 text-sm font-semibold rounded-xl cursor-default">
+                            <span>✅</span> 승인 완료
+                          </div>
+                        )}
+                        <ExportDropdown onPDF={handlePrint} onCSV={() => exportCSV([selected])} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            탭 2: 강사료 정산
+        ══════════════════════════════════════════════════════════ */}
+        {activeTab === "instructor" && (
+          <>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { icon: "⏳", label: "미지급 건수",  value: `${iUnpaidCount}건`,  color: iUnpaidCount > 0 ? "text-amber-600" : "text-gray-400",  bg: iUnpaidCount > 0 ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-100" },
+                { icon: "💸", label: "미지급 총액",  value: fmtWon(iUnpaidTotal), color: iUnpaidTotal > 0 ? "text-red-600"   : "text-gray-400",  bg: iUnpaidTotal > 0 ? "bg-red-50 border-red-200"     : "bg-gray-50 border-gray-100" },
+                { icon: "✅", label: "지급 완료 총액", value: fmtWon(iPaidTotal), color: "text-green-600",                                         bg: "bg-green-50 border-green-100" },
+              ].map((c) => (
+                <div key={c.label} className={`${c.bg} border rounded-2xl p-5 shadow-sm`}>
+                  <div className="text-2xl mb-2">{c.icon}</div>
+                  <p className={`text-2xl font-black ${c.color}`}>{c.value}</p>
+                  <p className="text-xs text-gray-500 mt-1">{c.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <h3 className="font-bold text-hwaseong-text text-sm">강사료 목록 (보고서 승인 완료 기준)</h3>
+                <div className="flex gap-1">
+                  {(["all", "unpaid", "paid"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setIFeeFilter(f)}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors ${
+                        iFeeFilter === f ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {f === "all" ? "전체" : f === "unpaid" ? `미지급 ${iUnpaidCount}` : "지급완료"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {fetching ? (
+                <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
+              ) : filteredIFees.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
+                  <p className="text-3xl mb-1">💵</p>
+                  <p className="text-xs">승인된 보고서가 없습니다.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 text-xs text-gray-400 font-semibold">
+                        <th className="text-left px-4 py-3">강사</th>
+                        <th className="text-left px-4 py-3">강의명</th>
+                        <th className="text-left px-4 py-3">강의일자</th>
+                        <th className="text-right px-4 py-3">수강인원</th>
+                        <th className="text-right px-4 py-3">강사료</th>
+                        <th className="text-center px-4 py-3">상태</th>
+                        <th className="text-center px-4 py-3">처리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {filteredIFees.map((r) => {
+                        const paid = r.instructor_fee_paid_at !== null;
+                        return (
+                          <tr key={r.id} className={`hover:bg-gray-50/60 transition-colors ${paid ? "opacity-60" : ""}`}>
+                            <td className="px-4 py-3.5">
+                              <p className="font-semibold text-hwaseong-text text-xs">{r.match?.leader?.profiles?.name ?? "—"}</p>
+                              <p className="text-[10px] text-gray-400">{r.match?.category ?? "—"}</p>
+                            </td>
+                            <td className="px-4 py-3.5 max-w-[200px]">
+                              <p className="text-xs text-gray-700 line-clamp-1">{r.match?.title ?? "—"}</p>
+                            </td>
+                            <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">
+                              {fmtDate(r.lecture_date)}
+                            </td>
+                            <td className="px-4 py-3.5 text-right text-xs text-gray-600">
+                              {r.attendance_count}명
+                            </td>
+                            <td className="px-4 py-3.5 text-right">
+                              <FeeCell
+                                id={r.id} fee={r.instructor_fee} editing={editingIFee}
+                                onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
+                                onSave={saveIFee} onCancel={() => setEditingIFee(null)}
+                                saving={iFeeSaving}
+                              />
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                                {paid ? "✓ 지급완료" : "미지급"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              {!paid ? (
+                                <button
+                                  onClick={() => markIFeePaid(r.id, true)}
+                                  disabled={r.instructor_fee === 0}
+                                  className="text-xs font-bold px-3 py-1.5 bg-hwaseong-blue text-white rounded-xl hover:bg-blue-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                  title={r.instructor_fee === 0 ? "강사료를 먼저 입력해주세요" : "지급 처리"}
+                                >
+                                  지급처리
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => markIFeePaid(r.id, false)}
+                                  className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                                >
+                                  취소
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            탭 3: 대여료 정산
+        ══════════════════════════════════════════════════════════ */}
+        {activeTab === "rental" && (
+          <>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { icon: "⏳", label: "미수납 건수",    value: `${rUnpaidCount}건`,  color: rUnpaidCount > 0 ? "text-amber-600" : "text-gray-400",  bg: rUnpaidCount > 0 ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-100" },
+                { icon: "💸", label: "미수납 총액",    value: fmtWon(rUnpaidTotal), color: rUnpaidTotal > 0 ? "text-red-600"   : "text-gray-400",  bg: rUnpaidTotal > 0 ? "bg-red-50 border-red-200"     : "bg-gray-50 border-gray-100" },
+                { icon: "✅", label: "수납 완료 총액", value: fmtWon(rPaidTotal),   color: "text-green-600",                                         bg: "bg-green-50 border-green-100" },
+              ].map((c) => (
+                <div key={c.label} className={`${c.bg} border rounded-2xl p-5 shadow-sm`}>
+                  <div className="text-2xl mb-2">{c.icon}</div>
+                  <p className={`text-2xl font-black ${c.color}`}>{c.value}</p>
+                  <p className="text-xs text-gray-500 mt-1">{c.label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-hwaseong-text text-sm">대여료 목록</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">대여 신청된 매칭 요청 기준. 금액을 클릭해 수정, 확정 후 수납처리 하세요.</p>
+                </div>
+                <div className="flex gap-1">
+                  {(["all", "unpaid", "paid"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setRFeeFilter(f)}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors ${
+                        rFeeFilter === f ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {f === "all" ? "전체" : f === "unpaid" ? `미수납 ${rUnpaidCount}` : "수납완료"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {fetching ? (
+                <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
+              ) : filteredRFees.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
+                  <p className="text-3xl mb-1">🏢</p>
+                  <p className="text-xs">대여 신청된 강의가 없습니다.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 text-xs text-gray-400 font-semibold">
+                        <th className="text-left px-4 py-3">수요처</th>
+                        <th className="text-left px-4 py-3">강의명</th>
+                        <th className="text-left px-4 py-3">대여 항목</th>
+                        <th className="text-left px-4 py-3 whitespace-nowrap">강의 일자</th>
+                        <th className="text-right px-4 py-3 whitespace-nowrap">확정 대여료</th>
+                        <th className="text-right px-4 py-3 whitespace-nowrap">참고 금액</th>
+                        <th className="text-center px-4 py-3">상태</th>
+                        <th className="text-center px-4 py-3">처리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {filteredRFees.map((r) => {
+                        const paid = r.rental_fee_paid_at !== null;
+                        const items: string[] = [];
+                        if (r.needs_venue) items.push(r.venue?.name ?? "공간");
+                        if (r.needs_equipment) items.push(`노트북 ${r.rental_equipment_count}대`);
+                        return (
+                          <tr key={r.id} className={`hover:bg-gray-50/60 transition-colors ${paid ? "opacity-60" : ""}`}>
+                            <td className="px-4 py-3.5">
+                              <p className="font-semibold text-hwaseong-text text-xs">{r.client?.name ?? "—"}</p>
+                            </td>
+                            <td className="px-4 py-3.5 max-w-[160px]">
+                              <p className="text-xs text-gray-700 line-clamp-1">{r.title}</p>
+                              <p className="text-[10px] text-gray-400">{r.category}</p>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="flex flex-col gap-0.5">
+                                {items.map((item) => (
+                                  <span key={item} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full w-fit">{item}</span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">
+                              {fmtDate(r.start_date)}
+                            </td>
+                            <td className="px-4 py-3.5 text-right">
+                              <FeeCell
+                                id={r.id} fee={r.rental_fee_total} editing={editingRFee}
+                                onStartEdit={(id, fee) => setEditingRFee({ id, fee: String(fee) })}
+                                onSave={saveRFee} onCancel={() => setEditingRFee(null)}
+                                saving={rFeeSaving}
+                              />
+                            </td>
+                            <td className="px-4 py-3.5 text-right text-xs text-gray-400 whitespace-nowrap">
+                              {r.suggested_fee > 0 ? (
+                                <span title="설정 기준 자동 산출 금액">{fmtWon(r.suggested_fee)}</span>
+                              ) : "—"}
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                                {paid ? "✓ 수납완료" : "미수납"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              {!paid ? (
+                                <button
+                                  onClick={() => markRFeePaid(r.id, true)}
+                                  disabled={r.rental_fee_total === 0}
+                                  className="text-xs font-bold px-3 py-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                                  title={r.rental_fee_total === 0 ? "대여료를 먼저 입력해주세요" : "수납 처리"}
+                                >
+                                  수납처리
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => markRFeePaid(r.id, false)}
+                                  className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
+                                >
+                                  취소
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+      </DashboardLayout>
+
+      {/* 이미지 라이트박스 */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setLightboxImg(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightboxImg} alt="현장 사진" className="max-w-full max-h-full rounded-2xl shadow-2xl" />
+          <button className="absolute top-4 right-4 text-white text-2xl hover:text-gray-300">✕</button>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white text-sm font-semibold max-w-sm ${
+          toast.ok ? "bg-green-600" : "bg-red-500"
+        }`}>
+          <span>{toast.ok ? "✅" : "❌"}</span>
+          <span className="flex-1">{toast.msg}</span>
+          <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100">✕</button>
+        </div>
+      )}
+
+      <style jsx global>{`
+        @media print {
+          body > * { display: none !important; }
+          #certificate-print { display: block !important; }
+          .hidden.print\\:block { display: block !important; }
+        }
+      `}</style>
+    </>
   );
 }

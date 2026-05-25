@@ -166,17 +166,28 @@ export default function AdminReviewPage() {
                         <p className="font-bold text-hwaseong-text text-sm">{req.title}</p>
                       </div>
 
-                      {/* 기관 정보 */}
+                        {/* 기관 정보 — 화성시 소재 여부 확인의 핵심 */}
                       {org && (
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <span className="text-xs font-semibold text-gray-700">
-                            {org.org_name ?? org.name}
-                          </span>
-                          {org.org_type && (
-                            <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{org.org_type}</span>
-                          )}
-                          <span className="text-[10px] text-gray-400">{org.email}</span>
-                          <span className="text-[10px] text-gray-400">담당자: {org.name}</span>
+                        <div className="mb-3">
+                          <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                            <span className="text-lg flex-shrink-0 mt-0.5">🏢</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-black text-amber-900">
+                                  {org.org_name ?? org.name}
+                                </span>
+                                {org.org_type && (
+                                  <span className="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">{org.org_type}</span>
+                                )}
+                              </div>
+                              {req.address && (
+                                <p className="text-[11px] text-amber-700 font-medium mt-0.5">📍 {req.address}</p>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-1.5 px-1">
+                            담당자 {org.name} · {org.email}
+                          </p>
                         </div>
                       )}
 
@@ -185,7 +196,6 @@ export default function AdminReviewPage() {
                         <span>🎯 {req.category}</span>
                         <span>👥 {req.participant_count}명</span>
                         <span>📅 {req.start_date}{req.end_date ? ` ~ ${req.end_date}` : ""}</span>
-                        {req.address && <span>📍 {req.address}</span>}
                         {req.institution_type && <span>🏫 {req.institution_type}</span>}
                         <span>🔄 {FREQ_LABELS[req.frequency] ?? req.frequency}</span>
                         <span>📡 {LOC_LABELS[req.location_type] ?? req.location_type}</span>

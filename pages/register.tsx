@@ -73,6 +73,8 @@ export default function RegisterPage() {
   const [certImageUrl, setCertImageUrl] = useState<string | null>(null);
   const [selectedSpecialties, setSelectedSpecialties] = useState<string[]>([]);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [consents, setConsents] = useState({ terms: false, privacy: false });
+  const [expandedConsent, setExpandedConsent] = useState<"terms" | "privacy" | null>(null);
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error" | "rate_limit">("idle");
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -174,6 +176,7 @@ export default function RegisterPage() {
     if (form.password.length < 6) return setError("비밀번호는 6자 이상이어야 합니다.");
     if (form.password !== form.confirm) return setError("비밀번호가 일치하지 않습니다.");
     if (role === "leader" && !certFile && !certImageUrl) return setError("AI 시민 리더 교육 인증서를 업로드해 주세요.");
+    if (!consents.terms || !consents.privacy) return setError("필수 동의 항목에 모두 동의해 주세요.");
     setError(null);
     setSubmitting(true);
 
@@ -752,6 +755,100 @@ export default function RegisterPage() {
                     <p className="text-xs text-red-400 mt-3 text-center font-medium">
                       수료증 업로드는 필수입니다.
                     </p>
+                  </div>
+                )}
+
+                {/* 개인정보 동의 — 최종 단계에서만 표시 */}
+                {(role === "client" || (role === "leader" && step === 4)) && (
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                    {/* 전체 동의 */}
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={consents.terms && consents.privacy}
+                        onChange={(e) => setConsents({ terms: e.target.checked, privacy: e.target.checked })}
+                        className="w-4 h-4 accent-hwaseong-blue rounded"
+                      />
+                      <span className="text-sm font-bold text-gray-700 group-hover:text-hwaseong-blue transition-colors">
+                        전체 동의
+                      </span>
+                    </label>
+
+                    <div className="border-t border-gray-200" />
+
+                    {/* 이용약관 */}
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={consents.terms}
+                          onChange={(e) => setConsents((p) => ({ ...p, terms: e.target.checked }))}
+                          className="w-4 h-4 accent-hwaseong-blue rounded flex-shrink-0"
+                        />
+                        <span className="flex-1 text-xs text-gray-600">
+                          <span className="text-red-400 font-bold mr-1">[필수]</span>서비스 이용약관 동의
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedConsent((v) => v === "terms" ? null : "terms")}
+                          className="text-[11px] text-gray-400 hover:text-hwaseong-blue underline underline-offset-2 flex-shrink-0"
+                        >
+                          {expandedConsent === "terms" ? "접기" : "보기"}
+                        </button>
+                      </div>
+                      {expandedConsent === "terms" && (
+                        <div className="mt-2 ml-7 p-3 bg-white border border-gray-200 rounded-xl text-[11px] text-gray-500 leading-relaxed max-h-32 overflow-y-auto">
+                          <p className="font-semibold text-gray-700 mb-1">서비스 이용약관</p>
+                          <p>본 서비스(화성 AI 시민리더 잇다)는 화성특례시 AI 혁신학교 AI랩이 운영하는 AI 강사-수요처 매칭 플랫폼입니다.</p>
+                          <p className="mt-1">회원은 서비스를 이용함에 있어 관계 법령 및 이 약관을 준수해야 하며, 불법적인 방법으로 서비스를 이용할 수 없습니다.</p>
+                          <p className="mt-1">서비스 이용 중 발생한 분쟁은 관련 법령에 따라 처리됩니다.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 개인정보 수집·이용 */}
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={consents.privacy}
+                          onChange={(e) => setConsents((p) => ({ ...p, privacy: e.target.checked }))}
+                          className="w-4 h-4 accent-hwaseong-blue rounded flex-shrink-0"
+                        />
+                        <span className="flex-1 text-xs text-gray-600">
+                          <span className="text-red-400 font-bold mr-1">[필수]</span>개인정보 수집·이용 동의
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedConsent((v) => v === "privacy" ? null : "privacy")}
+                          className="text-[11px] text-gray-400 hover:text-hwaseong-blue underline underline-offset-2 flex-shrink-0"
+                        >
+                          {expandedConsent === "privacy" ? "접기" : "보기"}
+                        </button>
+                      </div>
+                      {expandedConsent === "privacy" && (
+                        <div className="mt-2 ml-7 p-3 bg-white border border-gray-200 rounded-xl text-[11px] text-gray-500 leading-relaxed max-h-32 overflow-y-auto">
+                          <p className="font-semibold text-gray-700 mb-1">개인정보 수집·이용 안내</p>
+                          <table className="w-full text-[10px] border-collapse mb-1">
+                            <thead>
+                              <tr className="bg-gray-100">
+                                <th className="border border-gray-200 px-1.5 py-1 text-left font-semibold">수집 항목</th>
+                                <th className="border border-gray-200 px-1.5 py-1 text-left font-semibold">수집 목적</th>
+                                <th className="border border-gray-200 px-1.5 py-1 text-left font-semibold">보유 기간</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td className="border border-gray-200 px-1.5 py-1">이름, 이메일{role === "leader" ? ", 전문분야, 활동지역, 교육인증서" : ", 기관명, 기관유형"}</td>
+                                <td className="border border-gray-200 px-1.5 py-1">회원 식별 및 매칭 서비스 제공</td>
+                                <td className="border border-gray-200 px-1.5 py-1">회원 탈퇴 시까지</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                          <p>동의를 거부할 권리가 있으나, 거부 시 서비스 이용이 제한됩니다.</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

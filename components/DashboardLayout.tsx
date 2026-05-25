@@ -7,14 +7,16 @@ interface NavItem { icon: string; label: string; href: string }
 
 const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   leader: [
-    { icon: "📊", label: "현황",      href: "/dashboard/leader" },
-    { icon: "🔗", label: "매칭 요청", href: "/dashboard/leader/matches" },
-    { icon: "📄", label: "활동 보고", href: "/dashboard/leader/reports" },
-    { icon: "👤", label: "프로필",    href: "/dashboard/leader/profile" },
+    { icon: "📊", label: "현황",       href: "/dashboard/leader" },
+    { icon: "🔗", label: "매칭 요청",  href: "/dashboard/leader/matches" },
+    { icon: "📄", label: "활동 보고",  href: "/dashboard/leader/reports" },
+    { icon: "👤", label: "프로필",     href: "/dashboard/leader/profile" },
     { icon: "🏆", label: "포트폴리오", href: "/dashboard/leader/portfolio" },
+    { icon: "⚙️", label: "내 정보",   href: "/dashboard/settings" },
   ],
   client: [
     { icon: "📋", label: "내 매칭 요청", href: "/dashboard/client" },
+    { icon: "⚙️", label: "내 정보",     href: "/dashboard/settings" },
   ],
   admin: [
     { icon: "📊", label: "통계",          href: "/dashboard/admin" },
@@ -41,6 +43,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentHash, setCurrentHash] = useState("");
+
   const [adminAlerts, setAdminAlerts] = useState<AdminAlerts>({ reviewing: 0, pending: 0, rejected: 0, unverified: 0 });
 
   const fetchAdminAlerts = useCallback(async () => {
@@ -107,6 +110,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
     await signOut();
     router.push("/");
   }
+
 
   return (
     <div className="min-h-screen bg-hwaseong-gray font-sans flex flex-col">
@@ -229,6 +233,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
           </div>
         </main>
       </div>
+
     </div>
   );
 }

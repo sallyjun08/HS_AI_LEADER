@@ -321,7 +321,7 @@ export default function SettlementPage() {
 
   // ── 강사료 정산 탭 ──
   const [instructorFees, setInstructorFees] = useState<InstructorFee[]>([]);
-  const [iFeeFilter, setIFeeFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [showPaidIFees, setShowPaidIFees] = useState(false);
   const [editingIFee, setEditingIFee] = useState<{ id: string; fee: string } | null>(null);
   const [iFeeSaving, setIFeeSaving] = useState(false);
 
@@ -415,13 +415,10 @@ export default function SettlementPage() {
 
   // ── 강사료 정산 ──
 
-  const filteredIFees = useMemo(() => {
-    if (iFeeFilter === "paid")   return instructorFees.filter((r) => r.instructor_fee_paid_at !== null);
-    if (iFeeFilter === "unpaid") return instructorFees.filter((r) => r.instructor_fee_paid_at === null);
-    return instructorFees;
-  }, [instructorFees, iFeeFilter]);
+  const unpaidIFees = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at === null), [instructorFees]);
+  const paidIFees   = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at !== null), [instructorFees]);
 
-  const iUnpaidCount  = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at === null).length, [instructorFees]);
+  const iUnpaidCount  = unpaidIFees.length;
   const iUnpaidTotal  = useMemo(() => instructorFees.filter((r) => !r.instructor_fee_paid_at).reduce((s, r) => s + r.instructor_fee, 0), [instructorFees]);
   const iPaidTotal    = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at).reduce((s, r) => s + r.instructor_fee, 0), [instructorFees]);
 
@@ -856,106 +853,144 @@ export default function SettlementPage() {
               ))}
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="font-bold text-hwaseong-text text-sm">강사료 목록 <span className="text-gray-400 font-normal">— 보고서 승인 완료 기준</span></h3>
-                <div className="flex gap-1">
-                  {(["all", "unpaid", "paid"] as const).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setIFeeFilter(f)}
-                      className={`text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors ${
-                        iFeeFilter === f ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                      }`}
-                    >
-                      {f === "all" ? "전체" : f === "unpaid" ? `미지급 ${iUnpaidCount}` : "지급완료"}
-                    </button>
-                  ))}
-                </div>
+            {fetching ? (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
+            ) : instructorFees.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center h-32 text-gray-300">
+                <p className="text-3xl mb-1">💵</p>
+                <p className="text-xs">승인된 보고서가 없습니다.</p>
               </div>
+            ) : (
+              <div className="space-y-3">
 
-              {fetching ? (
-                <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
-              ) : filteredIFees.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-                  <p className="text-3xl mb-1">💵</p>
-                  <p className="text-xs">승인된 보고서가 없습니다.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {filteredIFees.map((r) => {
-                    const paid   = r.instructor_fee_paid_at !== null;
-                    const noFee  = r.instructor_fee === 0;
-                    const name   = r.match?.leader?.profiles?.name ?? "—";
-                    const initial = name.charAt(0);
-                    const borderColor = paid ? "border-l-green-400" : noFee ? "border-l-gray-200" : "border-l-hwaseong-blue";
-                    const bgColor     = paid ? "bg-green-50/40" : "";
-                    return (
-                      <div key={r.id} className={`flex items-center gap-4 px-5 py-4 border-l-4 ${borderColor} ${bgColor} hover:bg-gray-50/60 transition-colors`}>
-
-                        {/* 강사 아바타 */}
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${
-                          paid ? "bg-green-100 text-green-700" : "bg-indigo-100 text-indigo-700"
-                        }`}>
-                          {initial}
-                        </div>
-
-                        {/* 강사명 + 강의 정보 */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-sm font-bold text-hwaseong-text">{name}</span>
-                            <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">{r.match?.category ?? "—"}</span>
+                {/* ── 미지급 섹션 ── */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3.5 bg-amber-50/60 border-b border-amber-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">⏳</span>
+                      <span className="text-sm font-bold text-hwaseong-text">지급 처리 필요</span>
+                      {unpaidIFees.length > 0 && (
+                        <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{unpaidIFees.length}건</span>
+                      )}
+                    </div>
+                    {iUnpaidTotal > 0 && (
+                      <span className="text-sm font-bold text-red-500">{fmtWon(iUnpaidTotal)}</span>
+                    )}
+                  </div>
+                  {unpaidIFees.length === 0 ? (
+                    <div className="flex items-center justify-center py-8 text-gray-300 text-sm gap-2">
+                      <span>🎉</span> 미지급 항목이 없습니다.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-50">
+                      {unpaidIFees.map((r) => {
+                        const noFee = r.instructor_fee === 0;
+                        const name  = r.match?.leader?.profiles?.name ?? "—";
+                        return (
+                          <div key={r.id} className={`flex items-center gap-4 px-5 py-4 border-l-4 ${noFee ? "border-l-gray-200" : "border-l-hwaseong-blue"} hover:bg-gray-50/60 transition-colors`}>
+                            <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black flex-shrink-0">
+                              {name.charAt(0)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="text-sm font-bold text-hwaseong-text">{name}</span>
+                                <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">{r.match?.category ?? "—"}</span>
+                              </div>
+                              <p className="text-xs text-gray-600 truncate">{r.match?.title ?? "—"}</p>
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
+                                <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 min-w-[120px] text-right">
+                              <FeeCell
+                                id={r.id} fee={r.instructor_fee} editing={editingIFee}
+                                onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
+                                onSave={saveIFee} onCancel={() => setEditingIFee(null)}
+                                saving={iFeeSaving}
+                              />
+                            </div>
+                            <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]">
+                              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${noFee ? "bg-gray-100 text-gray-400" : "bg-amber-100 text-amber-700"}`}>
+                                {noFee ? "금액 미입력" : "미지급"}
+                              </span>
+                              <button
+                                onClick={() => markIFeePaid(r.id, true)}
+                                disabled={noFee}
+                                className="text-xs font-bold px-3 py-1.5 bg-hwaseong-blue text-white rounded-xl hover:bg-blue-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-full text-center"
+                                title={noFee ? "강사료를 먼저 입력해주세요" : "지급 처리"}
+                              >
+                                지급처리
+                              </button>
+                            </div>
                           </div>
-                          <p className="text-xs text-gray-600 truncate">{r.match?.title ?? "—"}</p>
-                          <div className="flex items-center gap-3 mt-1">
-                            <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
-                            <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
-                          </div>
-                        </div>
-
-                        {/* 강사료 금액 */}
-                        <div className="flex-shrink-0 text-right min-w-[120px]">
-                          <FeeCell
-                            id={r.id} fee={r.instructor_fee} editing={editingIFee}
-                            onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
-                            onSave={saveIFee} onCancel={() => setEditingIFee(null)}
-                            saving={iFeeSaving}
-                          />
-                        </div>
-
-                        {/* 상태 + 버튼 */}
-                        <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]">
-                          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                            paid    ? "bg-green-100 text-green-700" :
-                            noFee   ? "bg-gray-100 text-gray-400"  :
-                                      "bg-amber-100 text-amber-700"
-                          }`}>
-                            {paid ? "✓ 지급완료" : noFee ? "금액 미입력" : "미지급"}
-                          </span>
-                          {!paid ? (
-                            <button
-                              onClick={() => markIFeePaid(r.id, true)}
-                              disabled={noFee}
-                              className="text-xs font-bold px-3 py-1.5 bg-hwaseong-blue text-white rounded-xl hover:bg-blue-900 disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-full text-center"
-                              title={noFee ? "강사료를 먼저 입력해주세요" : "지급 처리"}
-                            >
-                              지급처리
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => markIFeePaid(r.id, false)}
-                              className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors w-full text-center"
-                            >
-                              지급 취소
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {/* ── 지급완료 섹션 (접기/펼치기) ── */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <button
+                    onClick={() => setShowPaidIFees(!showPaidIFees)}
+                    className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">✅</span>
+                      <span className="text-sm font-bold text-gray-500">지급 완료</span>
+                      <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{paidIFees.length}건</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-bold text-green-600">{fmtWon(iPaidTotal)}</span>
+                      <span className="text-gray-400 text-xs">{showPaidIFees ? "▲" : "▼"}</span>
+                    </div>
+                  </button>
+                  {showPaidIFees && (
+                    <div className="divide-y divide-gray-50 border-t border-gray-100">
+                      {paidIFees.length === 0 ? (
+                        <div className="flex items-center justify-center py-6 text-gray-300 text-sm">완료된 항목이 없습니다.</div>
+                      ) : (
+                        paidIFees.map((r) => {
+                          const name = r.match?.leader?.profiles?.name ?? "—";
+                          return (
+                            <div key={r.id} className="flex items-center gap-4 px-5 py-4 border-l-4 border-l-green-300 bg-green-50/30 hover:bg-green-50/60 transition-colors opacity-75">
+                              <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-sm font-black flex-shrink-0">
+                                {name.charAt(0)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className="text-sm font-bold text-gray-500">{name}</span>
+                                  <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">{r.match?.category ?? "—"}</span>
+                                </div>
+                                <p className="text-xs text-gray-400 truncate">{r.match?.title ?? "—"}</p>
+                                <div className="flex items-center gap-3 mt-1">
+                                  <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
+                                  <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
+                                </div>
+                              </div>
+                              <div className="flex-shrink-0 min-w-[120px] text-right">
+                                <span className="text-sm font-bold text-green-600">{fmtWon(r.instructor_fee)}</span>
+                              </div>
+                              <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]">
+                                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-green-100 text-green-700">✓ 지급완료</span>
+                                <button
+                                  onClick={() => markIFeePaid(r.id, false)}
+                                  className="text-[10px] text-gray-300 hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors w-full text-center"
+                                >
+                                  지급 취소
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
           </>
         )}
 

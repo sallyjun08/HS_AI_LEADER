@@ -22,6 +22,7 @@ type RentalSetting = {
   max_quantity: number | null;
   available: boolean;
   available_slots: AvailableSlots | null;
+  district: string | null;
 };
 
 const DAY_LABELS: Record<string, string> = {
@@ -318,10 +319,14 @@ export default function ClientDashboard() {
     rentalEquipmentCount: "0", rentalNotes: "",
   });
   const [rentalSettings, setRentalSettings] = useState<RentalSetting[]>([]);
+  const [venueDistrictFilter, setVenueDistrictFilter] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [reviewState, setReviewState] = useState<ReviewState | null>(null);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [activePage, setActivePage] = useState(1);
+  const [completedPage, setCompletedPage] = useState(1);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "client")) router.replace("/login");
@@ -427,9 +432,17 @@ export default function ClientDashboard() {
 
   const reportByMatchId = Object.fromEntries(reports.map((r) => [r.match_id, r]));
 
+  const PAGE_SIZE = 5;
+  const activeRequests = requests.filter((r) => r.status !== "completed");
+  const completedRequests = [...requests.filter((r) => r.status === "completed")]
+    .sort((a, b) => b.start_date.localeCompare(a.start_date));
+
+  const pagedActive = activeRequests.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
+  const pagedCompleted = completedRequests.slice((completedPage - 1) * PAGE_SIZE, completedPage * PAGE_SIZE);
+
   const pending = requests.filter((r) => r.status === "pending").length;
   const matched = requests.filter((r) => ["matched", "ongoing"].includes(r.status)).length;
-  const completed = requests.filter((r) => r.status === "completed").length;
+  const completed = completedRequests.length;
   const totalFee = requests
     .filter((r) => r.status !== "cancelled")
     .reduce((sum, r) => sum + (r.session_count ?? 1) * FEE_PER_SESSION, 0);
@@ -522,7 +535,7 @@ export default function ClientDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-bold text-hwaseong-text text-sm">매칭 요청 현황</p>
-              <p className="text-xs text-gray-400 mt-0.5">총 {requests.length}건</p>
+              <p className="text-xs text-gray-400 mt-0.5">진행 중 {activeRequests.length}건{completed > 0 ? ` · 완료 ${completed}건` : ""}</p>
             </div>
             <button
               onClick={() => setShowForm(true)}
@@ -537,10 +550,10 @@ export default function ClientDashboard() {
         {/* 매칭 요청 목록 */}
         {!showForm && (
           <div className="space-y-4">
-            {requests.length === 0 && (
+            {activeRequests.length === 0 && (
               <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
                 <p className="text-5xl mb-4">📋</p>
-                <p className="font-bold text-gray-500 mb-1">아직 매칭 요청이 없습니다</p>
+                <p className="font-bold text-gray-500 mb-1">진행 중인 매칭 요청이 없습니다</p>
                 <p className="text-xs text-gray-400 mb-6">강의 요청을 등록하면 최적의 강사를 매칭해 드립니다.</p>
                 <button
                   onClick={() => setShowForm(true)}
@@ -550,10 +563,10 @@ export default function ClientDashboard() {
                 </button>
               </div>
             )}
-            {requests.map((req) => {
+            {pagedActive.map((req) => {
               const displayStatus = req.status === "pending" && !req.is_approved ? "reviewing" : req.status;
               const st = STATUS_MAP[displayStatus] ?? { label: req.status, cls: "bg-gray-100 text-gray-500", icon: "", desc: "" };
-              const isRevealed = ["matched", "ongoing", "completed"].includes(req.status);
+              const isRevealed = ["matched", "ongoing"].includes(req.status);
               const isExpanded = expandedId === req.id;
               const l = req.leader;
               return (
@@ -768,6 +781,182 @@ export default function ClientDashboard() {
                 </div>
               );
             })}
+            {activeRequests.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between px-1 py-2">
+                <button onClick={() => setActivePage((p) => Math.max(1, p - 1))} disabled={activePage === 1}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  ← 이전
+                </button>
+                <span className="text-xs text-gray-400">
+                  <span className="font-bold text-hwaseong-text">{activePage}</span> / {Math.ceil(activeRequests.length / PAGE_SIZE)} 페이지
+                  <span className="ml-2 text-gray-300">({activeRequests.length}건)</span>
+                </span>
+                <button onClick={() => setActivePage((p) => Math.min(Math.ceil(activeRequests.length / PAGE_SIZE), p + 1))} disabled={activePage === Math.ceil(activeRequests.length / PAGE_SIZE)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                  다음 →
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 완료된 강의 섹션 */}
+        {!showForm && completedRequests.length > 0 && (
+          <div className="rounded-2xl border border-gray-100 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowCompleted((v) => !v)}
+              className="w-full flex items-center justify-between px-5 py-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-base">🎓</span>
+                <span className="font-bold text-gray-600 text-sm">완료된 강의</span>
+                <span className="text-xs bg-gray-200 text-gray-500 font-semibold px-2 py-0.5 rounded-full">{completedRequests.length}건</span>
+              </div>
+              <span className={`text-gray-400 text-sm transition-transform duration-200 ${showCompleted ? "rotate-180" : ""}`}>▾</span>
+            </button>
+            {showCompleted && (
+              <div className="divide-y divide-gray-100">
+                {pagedCompleted.map((req) => {
+                  const st = STATUS_MAP.completed;
+                  const isExpanded = expandedId === req.id;
+                  const l = req.leader;
+                  const report = reportByMatchId[req.id];
+                  return (
+                    <div key={req.id} className={`bg-white transition-colors ${isExpanded ? "bg-gray-50" : ""}`}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(isExpanded ? null : req.id)}
+                        className="w-full text-left px-5 py-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-700 text-sm leading-snug">{req.title}</p>
+                            <p className="text-xs text-gray-400 mt-0.5 truncate">{req.address} · {req.start_date}</p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {report?.rating_from_client != null ? (
+                              <span className="text-xs text-amber-600 font-semibold flex items-center gap-0.5">
+                                {"★".repeat(report.rating_from_client)}{"☆".repeat(5 - report.rating_from_client)}
+                              </span>
+                            ) : (
+                              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${st.cls}`}>{st.icon} {st.label}</span>
+                            )}
+                            <span className={`text-gray-300 text-sm transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}>▾</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-2 text-xs text-gray-400">
+                          {req.lecture_type && (() => {
+                            const lt = LECTURE_TYPES.find((t) => t.value === req.lecture_type);
+                            if (!lt) return null;
+                            return <span className={`font-medium px-2 py-0.5 rounded-md ${lt.bg} ${lt.text} opacity-70`}>{lt.emoji} {lt.name}</span>;
+                          })()}
+                          <span className="bg-gray-50 px-2 py-0.5 rounded-md">{req.category}</span>
+                          <span className="bg-gray-50 px-2 py-0.5 rounded-md">👥 {req.participant_count}명</span>
+                          {req.session_count && <span className="bg-gray-50 px-2 py-0.5 rounded-md">{req.session_count}회</span>}
+                          {l && <span className="bg-gray-50 px-2 py-0.5 rounded-md">강사 {l.profiles?.name ?? "-"}</span>}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-5 pb-5 space-y-3 border-t border-gray-100 pt-4">
+                          {/* 배정 강사 */}
+                          {l && (
+                            <div className="rounded-xl p-4 bg-gray-50 border border-gray-200">
+                              <p className="text-xs font-bold text-gray-500 mb-2">강의 강사</p>
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 bg-hwaseong-blue/10 rounded-xl flex items-center justify-center text-sm font-bold text-hwaseong-blue flex-shrink-0">
+                                  {l.profiles?.name?.[0] ?? "?"}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-hwaseong-text">{l.profiles?.name ?? "-"}</p>
+                                  <div className="flex gap-2 mt-0.5 text-xs text-gray-500">
+                                    <span>⭐ {(l.rating_avg ?? 0).toFixed(1)}</span>
+                                    {l.is_verified && <span className="text-green-600">✓ 인증</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {/* 평점 */}
+                          {(() => {
+                            if (!report) {
+                              return <p className="text-xs text-gray-400 text-center py-2">강사가 아직 활동 보고서를 제출하지 않았습니다.</p>;
+                            }
+                            if (report.rating_from_client !== null) {
+                              return (
+                                <div className="px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex gap-0.5">
+                                      {[1,2,3,4,5].map((v) => (
+                                        <span key={v} className={`text-base ${v <= report.rating_from_client! ? "text-amber-400" : "text-gray-200"}`}>★</span>
+                                      ))}
+                                    </div>
+                                    <span className="text-xs font-semibold text-amber-700">{report.rating_from_client}점</span>
+                                    <span className="text-xs text-gray-400">· 평가 완료</span>
+                                  </div>
+                                  {report.client_feedback && (
+                                    <p className="text-xs text-gray-600 leading-relaxed">"{report.client_feedback}"</p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            if (reviewState?.reportId === report.id) {
+                              return (
+                                <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+                                  <div className="flex items-center gap-1">
+                                    {[1,2,3,4,5].map((v) => (
+                                      <button key={v} onClick={() => setReviewState((p) => p ? { ...p, rating: v } : p)}
+                                        className={`text-2xl transition-transform hover:scale-110 ${reviewState.rating >= v ? "text-amber-400" : "text-gray-200"}`}>★</button>
+                                    ))}
+                                    <span className="ml-2 text-xs font-bold text-amber-700">{reviewState.rating}점</span>
+                                  </div>
+                                  <textarea rows={2} value={reviewState.feedback}
+                                    onChange={(e) => setReviewState((p) => p ? { ...p, feedback: e.target.value } : p)}
+                                    placeholder="강사에 대한 피드백을 자유롭게 남겨주세요. (선택)"
+                                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300/40 resize-none bg-white"
+                                  />
+                                  <div className="flex gap-2">
+                                    <button onClick={() => submitRating(reviewState.reportId, reviewState.rating, reviewState.feedback)}
+                                      disabled={ratingSubmitting}
+                                      className="flex-1 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 disabled:opacity-60">
+                                      {ratingSubmitting ? "제출 중..." : "평가 제출"}
+                                    </button>
+                                    <button onClick={() => setReviewState(null)} className="px-3 py-1.5 text-xs text-gray-400 rounded-lg hover:bg-gray-100">취소</button>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <button onClick={() => setReviewState({ reportId: report.id, rating: 5, feedback: "" })}
+                                className="w-full py-2.5 border border-amber-200 text-amber-700 text-xs font-bold rounded-xl hover:bg-amber-50 transition-colors">
+                                ⭐ 만족도 평가 남기기
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {completedRequests.length > PAGE_SIZE && (
+                  <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+                    <button onClick={() => setCompletedPage((p) => Math.max(1, p - 1))} disabled={completedPage === 1}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      ← 이전
+                    </button>
+                    <span className="text-xs text-gray-400">
+                      <span className="font-bold text-hwaseong-text">{completedPage}</span> / {Math.ceil(completedRequests.length / PAGE_SIZE)} 페이지
+                      <span className="ml-2 text-gray-300">({completedRequests.length}건)</span>
+                    </span>
+                    <button onClick={() => setCompletedPage((p) => Math.min(Math.ceil(completedRequests.length / PAGE_SIZE), p + 1))} disabled={completedPage === Math.ceil(completedRequests.length / PAGE_SIZE)}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      다음 →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1168,7 +1357,7 @@ export default function ClientDashboard() {
               <div className="border border-dashed border-gray-200 rounded-xl overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => setForm((p) => ({ ...p, rentalEnabled: !p.rentalEnabled, rentalVenueId: "", sessionSlots: Array.from({ length: Number(p.sessionCount) || 1 }, () => ({ date: "", startTime: "" })), rentalEquipmentCount: "0" }))}
+                  onClick={() => { setVenueDistrictFilter(null); setForm((p) => ({ ...p, rentalEnabled: !p.rentalEnabled, rentalVenueId: "", sessionSlots: Array.from({ length: Number(p.sessionCount) || 1 }, () => ({ date: "", startTime: "" })), rentalEquipmentCount: "0" })); }}
                   className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-gray-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
@@ -1197,9 +1386,43 @@ export default function ClientDashboard() {
                       <label className="block text-xs font-semibold text-gray-600 mb-2">
                         교육 공간 선택 <span className="font-normal text-gray-400">(선택사항 · 직접 섭외 시 미선택)</span>
                       </label>
+                      {/* 지역 필터 */}
+                      {(() => {
+                        const venueDists = Array.from(new Set(
+                          rentalSettings.filter((s) => s.type === "venue" && s.available && s.district)
+                            .map((s) => s.district as string)
+                        )).sort();
+                        if (venueDists.length < 2) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            <button
+                              type="button"
+                              onClick={() => setVenueDistrictFilter(null)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                                venueDistrictFilter === null ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                              }`}
+                            >
+                              전체
+                            </button>
+                            {venueDists.map((d) => (
+                              <button
+                                key={d}
+                                type="button"
+                                onClick={() => setVenueDistrictFilter(venueDistrictFilter === d ? null : d)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                                  venueDistrictFilter === d ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                                }`}
+                              >
+                                📍 {d}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       <div className="space-y-2">
                         {rentalSettings.filter((s) => {
                           if (s.type !== "venue" || !s.available) return false;
+                          if (venueDistrictFilter && s.district !== venueDistrictFilter) return false;
                           const vStart = s.available_slots ? timeToMinutes(s.available_slots.start) : 0;
                           const vEnd   = s.available_slots ? timeToMinutes(s.available_slots.end)   : 1440;
                           const vDays  = s.available_slots?.days ?? [];
@@ -1280,6 +1503,7 @@ export default function ClientDashboard() {
                           // reuse same filter logic inline
                           const visible = rentalSettings.filter((s) => {
                             if (s.type !== "venue" || !s.available) return false;
+                            if (venueDistrictFilter && s.district !== venueDistrictFilter) return false;
                             const vStart = s.available_slots ? timeToMinutes(s.available_slots.start) : 0;
                             const vEnd   = s.available_slots ? timeToMinutes(s.available_slots.end)   : 1440;
                             const vDays  = s.available_slots?.days ?? [];

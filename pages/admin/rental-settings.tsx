@@ -16,6 +16,7 @@ type RentalItem = {
   max_quantity: number | null;
   available: boolean;
   available_slots: { days: string[]; start: string; end: string } | null;
+  district: string | null;
 };
 
 const WEEKDAYS = [
@@ -29,6 +30,7 @@ const EMPTY_FORM = {
   fee_per_use: "0", fee_unit: "회", max_quantity: "", available: true,
   slots_days: ["mon", "tue", "wed", "thu", "fri"],
   slots_start: "09:00", slots_end: "18:00", use_slots: true,
+  district: "",
 };
 
 type FormState = typeof EMPTY_FORM;
@@ -49,6 +51,7 @@ function toForm(item: RentalItem): FormState {
     slots_start: item.available_slots?.start ?? "09:00",
     slots_end: item.available_slots?.end ?? "18:00",
     use_slots: item.available_slots != null,
+    district: item.district ?? "",
   };
 }
 
@@ -66,6 +69,7 @@ function toBody(form: FormState) {
     available_slots: form.type === "venue" && form.use_slots
       ? { days: form.slots_days, start: form.slots_start, end: form.slots_end }
       : null,
+    district: form.district.trim() || undefined,
   };
 }
 
@@ -76,6 +80,9 @@ export default function RentalSettingsPage() {
   const [items, setItems] = useState<RentalItem[]>([]);
   const [fetching, setFetching] = useState(true);
   const [tab, setTab] = useState<"venue" | "equipment">("venue");
+  const [filterDistrict, setFilterDistrict] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 5;
 
   const [modalMode, setModalMode] = useState<"create" | "edit" | null>(null);
   const [editTarget, setEditTarget] = useState<RentalItem | null>(null);
@@ -194,7 +201,11 @@ export default function RentalSettingsPage() {
     }
   }
 
-  const listed = items.filter((i) => i.type === tab);
+  const byTab = items.filter((i) => i.type === tab);
+  const districts = Array.from(new Set(byTab.map((i) => i.district).filter(Boolean) as string[])).sort();
+  const listed = filterDistrict ? byTab.filter((i) => i.district === filterDistrict) : byTab;
+  const totalPages = Math.ceil(listed.length / PAGE_SIZE);
+  const pagedListed = listed.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   if (loading || !user) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
@@ -231,7 +242,7 @@ export default function RentalSettingsPage() {
           {(["venue", "equipment"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => { setTab(t); setPage(1); setFilterDistrict(null); }}
               className={`px-5 py-2 rounded-xl text-sm font-bold transition-colors ${
                 tab === t ? "bg-hwaseong-blue text-white shadow-sm" : "bg-white border border-gray-200 text-gray-500 hover:border-hwaseong-blue"
               }`}
@@ -243,6 +254,31 @@ export default function RentalSettingsPage() {
             </button>
           ))}
         </div>
+
+        {/* 지역 필터 */}
+        {!fetching && districts.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => { setFilterDistrict(null); setPage(1); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                filterDistrict === null ? "bg-hwaseong-blue text-white" : "bg-white border border-gray-200 text-gray-500 hover:border-hwaseong-blue"
+              }`}
+            >
+              전체 {byTab.length}
+            </button>
+            {districts.map((d) => (
+              <button
+                key={d}
+                onClick={() => { setFilterDistrict(d); setPage(1); }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+                  filterDistrict === d ? "bg-hwaseong-blue text-white" : "bg-white border border-gray-200 text-gray-500 hover:border-hwaseong-blue"
+                }`}
+              >
+                📍 {d} {byTab.filter((i) => i.district === d).length}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 목록 */}
         {fetching ? (
@@ -257,7 +293,7 @@ export default function RentalSettingsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {listed.map((item) => (
+            {pagedListed.map((item) => (
               <div key={item.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${item.available ? "border-gray-100" : "border-gray-100 opacity-60"}`}>
                 <div className="px-5 py-4 flex items-start gap-4">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${tab === "venue" ? "bg-teal-50" : "bg-cyan-50"}`}>
@@ -271,7 +307,8 @@ export default function RentalSettingsPage() {
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
-                      {item.address && <span>📍 {item.address}</span>}
+                      {item.district && <span className="font-semibold text-hwaseong-blue">📍 {item.district}</span>}
+                      {item.address && <span>🗺 {item.address}</span>}
                       {item.capacity != null && <span>👥 최대 {item.capacity}명</span>}
                       {item.max_quantity != null && <span>📦 최대 {item.max_quantity}{item.fee_unit.includes("대") ? "대" : "개"}</span>}
                       <span>💰 {item.fee_per_use.toLocaleString()}원/{item.fee_unit}</span>
@@ -297,6 +334,28 @@ export default function RentalSettingsPage() {
                 </div>
               </div>
             ))}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-3 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <button
+                  onClick={() => setPage((p) => p - 1)}
+                  disabled={page === 1}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  ← 이전
+                </button>
+                <span className="text-xs text-gray-400">
+                  <span className="font-bold text-hwaseong-text">{page}</span> / {totalPages} 페이지
+                  <span className="ml-2 text-gray-300">({listed.length}건)</span>
+                </span>
+                <button
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page === totalPages}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  다음 →
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -337,6 +396,15 @@ export default function RentalSettingsPage() {
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">이름 <span className="text-red-400">*</span></label>
                   <input type="text" value={form.name} onChange={(e) => setF("name", e.target.value)}
                     placeholder={form.type === "venue" ? "예: 동탄복합문화센터 교육실 A" : "예: 노트북"}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
+                  />
+                </div>
+
+                {/* 지역 */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">지역</label>
+                  <input type="text" value={form.district} onChange={(e) => setF("district", e.target.value)}
+                    placeholder="예: 동탄, 봉담, 향남"
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
                   />
                 </div>

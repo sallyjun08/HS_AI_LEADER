@@ -16,12 +16,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
   }
 
   if (req.method === "POST") {
-    const { type, name, address, capacity, features, fee_per_use, fee_unit, max_quantity, available, available_slots } =
+    const { type, name, address, capacity, features, fee_per_use, fee_unit, max_quantity, available, available_slots, district } =
       req.body as {
         type: string; name: string; address?: string; capacity?: number;
         features?: string[]; fee_per_use?: number; fee_unit?: string;
         max_quantity?: number; available?: boolean;
         available_slots?: { days: string[]; start: string; end: string } | null;
+        district?: string;
       };
 
     if (!type || !name?.trim()) return res.status(400).json({ error: "유형과 이름은 필수입니다." });
@@ -42,6 +43,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
         max_quantity: max_quantity ?? null,
         available: available ?? true,
         available_slots: available_slots ?? null,
+        district: district?.trim() || null,
         updated_by: user.userId,
       })
       .select()

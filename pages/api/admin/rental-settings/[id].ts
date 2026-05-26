@@ -8,12 +8,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
   const { id } = req.query as { id: string };
 
   if (req.method === "PATCH") {
-    const { name, address, capacity, features, fee_per_use, fee_unit, max_quantity, available, available_slots } =
+    const { name, address, capacity, features, fee_per_use, fee_unit, max_quantity, available, available_slots, district } =
       req.body as {
         name?: string; address?: string; capacity?: number;
         features?: string[]; fee_per_use?: number; fee_unit?: string;
         max_quantity?: number; available?: boolean;
         available_slots?: { days: string[]; start: string; end: string } | null;
+        district?: string;
       };
 
     const updates: Record<string, unknown> = {
@@ -29,6 +30,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     if (max_quantity !== undefined)    updates.max_quantity = max_quantity;
     if (typeof available === "boolean") updates.available = available;
     if (available_slots !== undefined) updates.available_slots = available_slots;
+    if (district !== undefined)        updates.district = district?.trim() || null;
 
     const { data, error } = await supabaseAdmin
       .from("rental_settings")

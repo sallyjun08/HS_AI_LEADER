@@ -69,6 +69,8 @@ export default function AdminDashboard() {
   const [feedLeaders, setFeedLeaders] = useState<FeedLeader[]>([]);
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<{ accounts?: { leaders: { name: string; email: string; password: string }[]; client: { name: string; email: string; password: string } } } | null>(null);
+  const [testClientBusy, setTestClientBusy] = useState(false);
+  const [testClientResult, setTestClientResult] = useState<{ email: string; password: string } | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
@@ -112,6 +114,29 @@ export default function AdminDashboard() {
     setToast({ msg: data.message ?? (res.ok ? "삭제 완료" : "삭제 실패"), ok: res.ok });
     if (res.ok) fetchAll();
     setSeeding(false);
+  }
+
+  async function handleCreateTestClient() {
+    setTestClientBusy(true);
+    setTestClientResult(null);
+    const res = await fetch("/api/admin/create-test-client", { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      setTestClientResult({ email: data.email, password: data.password });
+      setToast({ msg: "테스트 수요처 계정 생성 완료!", ok: true });
+    } else {
+      setToast({ msg: data.error ?? "생성 실패", ok: false });
+    }
+    setTestClientBusy(false);
+  }
+
+  async function handleDeleteTestClient() {
+    setTestClientBusy(true);
+    setTestClientResult(null);
+    const res = await fetch("/api/admin/create-test-client", { method: "DELETE" });
+    const data = await res.json();
+    setToast({ msg: data.message ?? (res.ok ? "삭제 완료" : "삭제 실패"), ok: res.ok });
+    setTestClientBusy(false);
   }
 
   // 토스트 자동 소멸
@@ -490,6 +515,43 @@ export default function AdminDashboard() {
                   <p className="font-bold text-green-700">{seedResult.accounts.client.name}</p>
                   <p className="text-gray-400 truncate">{seedResult.accounts.client.email}</p>
                 </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── 테스트 수요처 계정 ─────────────────────────────────────────────── */}
+        <div className="bg-gray-50 border border-dashed border-gray-200 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-bold text-gray-500">개발자 도구 — 테스트 수요처 계정</h3>
+              <p className="text-xs text-gray-400 mt-0.5">수요처 플로우 테스트용 계정 생성/삭제 (client@test.aitda)</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCreateTestClient}
+                disabled={testClientBusy}
+                className="px-4 py-2 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 disabled:opacity-50 transition-colors"
+              >
+                {testClientBusy ? "처리 중..." : "계정 생성"}
+              </button>
+              <button
+                onClick={handleDeleteTestClient}
+                disabled={testClientBusy}
+                className="px-4 py-2 bg-red-100 text-red-600 text-xs font-bold rounded-xl hover:bg-red-200 disabled:opacity-50 transition-colors"
+              >
+                계정 삭제
+              </button>
+            </div>
+          </div>
+
+          {testClientResult && (
+            <div className="mt-3">
+              <p className="text-xs font-bold text-gray-500 mb-1">생성된 테스트 수요처 계정</p>
+              <div className="bg-white border border-green-200 rounded-xl px-3 py-2 text-xs inline-flex flex-col gap-0.5">
+                <p className="font-bold text-green-700">테스트 수요처</p>
+                <p className="text-gray-500">이메일: <span className="font-mono">{testClientResult.email}</span></p>
+                <p className="text-gray-500">비밀번호: <span className="font-mono">{testClientResult.password}</span></p>
               </div>
             </div>
           )}

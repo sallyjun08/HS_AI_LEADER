@@ -13,16 +13,19 @@ const HERO_SLIDES = [
     bg: "from-[#001845] via-[#004C97] to-[#003d7a]",
     badge: "2026 AI 혁신학교 AI랩 운영 중",
     desc: "",
+    img: "/hero-1.png",
   },
   {
     bg: "from-[#001133] via-[#004C97] to-[#003060]",
     badge: "AI 시민 리더 47명 현재 활동 중",
     desc: "",
+    img: "/hero-2.png",
   },
   {
     bg: "from-[#0d1b42] via-[#004C97] to-[#1a3a7a]",
     badge: "누적 교육 횟수 156회 달성",
     desc: "",
+    img: "/hero-3.png",
   },
 ];
 
@@ -160,10 +163,18 @@ export default function Landing() {
         {HERO_SLIDES.map((s, i) => (
           <div
             key={i}
-            className={`absolute inset-0 bg-gradient-to-br ${s.bg} transition-opacity duration-1000 ${
+            className={`absolute inset-0 transition-opacity duration-1000 ${
               i === slide ? "opacity-100" : "opacity-0"
             }`}
-          />
+          >
+            <div className={`absolute inset-0 bg-gradient-to-br ${s.bg}`} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={s.img}
+              alt=""
+              className="absolute top-[100px] left-0 right-0 bottom-0 w-full h-[calc(100%-100px)] object-cover opacity-30"
+            />
+          </div>
         ))}
 
           {/* Network animation background */}

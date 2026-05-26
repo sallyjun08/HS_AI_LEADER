@@ -40,16 +40,24 @@ type InstructorFee = {
   lecture_date: string | null;
   submitted_at: string;
   admin_approved_at: string;
+  admin_note: string | null;
+  report_text: string | null;
+  image_urls: string[];
+  rating_from_client: number | null;
   instructor_fee: number;
   instructor_fee_paid_at: string | null;
   match: {
     id: string;
     title: string;
     category: string;
+    address: string | null;
+    location_type: string | null;
+    frequency: string | null;
     leader: {
       id: string;
       profiles: { name: string; email: string } | null;
     } | null;
+    client: { name: string; email: string } | null;
   } | null;
 };
 
@@ -298,6 +306,37 @@ function FeeCell({
   );
 }
 
+// ─── 페이지네이션 ──────────────────────────────────────────────────────────
+
+function Pagination({ page, total, pageSize, onChange }: {
+  page: number; total: number; pageSize: number; onChange: (p: number) => void;
+}) {
+  const totalPages = Math.ceil(total / pageSize);
+  if (totalPages <= 1) return null;
+  return (
+    <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+      <button
+        onClick={() => onChange(page - 1)}
+        disabled={page === 1}
+        className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        ← 이전
+      </button>
+      <span className="text-xs text-gray-400">
+        <span className="font-bold text-hwaseong-text">{page}</span> / {totalPages} 페이지
+        <span className="ml-2 text-gray-300">({total}건)</span>
+      </span>
+      <button
+        onClick={() => onChange(page + 1)}
+        disabled={page === totalPages}
+        className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+      >
+        다음 →
+      </button>
+    </div>
+  );
+}
+
 // ─── 메인 컴포넌트 ─────────────────────────────────────────────────────────
 
 export default function SettlementPage() {
@@ -321,13 +360,21 @@ export default function SettlementPage() {
 
   // ── 강사료 정산 탭 ──
   const [instructorFees, setInstructorFees] = useState<InstructorFee[]>([]);
+  const [selectedIFee, setSelectedIFee] = useState<InstructorFee | null>(null);
   const [showPaidIFees, setShowPaidIFees] = useState(false);
+  const [iUnpaidPage, setIUnpaidPage] = useState(1);
+  const [iPaidPage,   setIPaidPage]   = useState(1);
+  const I_PAGE_SIZE = 5;
   const [editingIFee, setEditingIFee] = useState<{ id: string; fee: string } | null>(null);
   const [iFeeSaving, setIFeeSaving] = useState(false);
 
   // ── 대여료 정산 탭 ──
   const [rentalFees, setRentalFees] = useState<RentalFee[]>([]);
-  const [rFeeFilter, setRFeeFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [selectedRFee, setSelectedRFee] = useState<RentalFee | null>(null);
+  const [showPaidRFees, setShowPaidRFees] = useState(false);
+  const [rUnpaidPage, setRUnpaidPage] = useState(1);
+  const [rPaidPage,   setRPaidPage]   = useState(1);
+  const R_PAGE_SIZE = 5;
   const [editingRFee, setEditingRFee] = useState<{ id: string; fee: string } | null>(null);
   const [rFeeSaving, setRFeeSaving] = useState(false);
 
@@ -416,7 +463,11 @@ export default function SettlementPage() {
   // ── 강사료 정산 ──
 
   const unpaidIFees = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at === null), [instructorFees]);
-  const paidIFees   = useMemo(() => instructorFees.filter((r) => r.instructor_fee_paid_at !== null), [instructorFees]);
+  const paidIFees   = useMemo(() =>
+    instructorFees
+      .filter((r) => r.instructor_fee_paid_at !== null)
+      .sort((a, b) => (b.lecture_date ?? "").localeCompare(a.lecture_date ?? "")),
+  [instructorFees]);
 
   const iUnpaidCount  = unpaidIFees.length;
   const iUnpaidTotal  = useMemo(() => instructorFees.filter((r) => !r.instructor_fee_paid_at).reduce((s, r) => s + r.instructor_fee, 0), [instructorFees]);
@@ -459,11 +510,12 @@ export default function SettlementPage() {
 
   // ── 대여료 정산 ──
 
-  const filteredRFees = useMemo(() => {
-    if (rFeeFilter === "paid")   return rentalFees.filter((r) => r.rental_fee_paid_at !== null);
-    if (rFeeFilter === "unpaid") return rentalFees.filter((r) => r.rental_fee_paid_at === null);
-    return rentalFees;
-  }, [rentalFees, rFeeFilter]);
+  const unpaidRFees = useMemo(() => rentalFees.filter((r) => r.rental_fee_paid_at === null), [rentalFees]);
+  const paidRFees   = useMemo(() =>
+    rentalFees
+      .filter((r) => r.rental_fee_paid_at !== null)
+      .sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? "")),
+  [rentalFees]);
 
   const rUnpaidCount = useMemo(() => rentalFees.filter((r) => r.rental_fee_paid_at === null).length, [rentalFees]);
   const rUnpaidTotal = useMemo(() => rentalFees.filter((r) => !r.rental_fee_paid_at).reduce((s, r) => s + r.rental_fee_total, 0), [rentalFees]);
@@ -882,14 +934,20 @@ export default function SettlementPage() {
                       <span>🎉</span> 미지급 항목이 없습니다.
                     </div>
                   ) : (
+                    <>
                     <div className="divide-y divide-gray-50">
-                      {unpaidIFees.map((r) => {
+                      {unpaidIFees.slice((iUnpaidPage - 1) * I_PAGE_SIZE, iUnpaidPage * I_PAGE_SIZE).map((r) => {
                         const noFee = r.instructor_fee === 0;
                         const name  = r.match?.leader?.profiles?.name ?? "—";
                         return (
-                          <div key={r.id} className={`flex items-center gap-4 px-5 py-4 border-l-4 ${noFee ? "border-l-gray-200" : "border-l-hwaseong-blue"} hover:bg-gray-50/60 transition-colors`}>
-                            <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black flex-shrink-0">
-                              {name.charAt(0)}
+                          <div key={r.id} onClick={() => setSelectedIFee(r)} className={`flex items-center gap-4 px-5 py-4 border-l-4 ${noFee ? "border-l-gray-200" : "border-l-hwaseong-blue"} hover:bg-gray-50/60 transition-colors cursor-pointer`}>
+                            <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden">
+                              {r.image_urls?.length > 0 ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={r.image_urls[0]} alt="현장 사진" className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">{name.charAt(0)}</div>
+                              )}
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-0.5">
@@ -900,9 +958,12 @@ export default function SettlementPage() {
                               <div className="flex items-center gap-3 mt-1">
                                 <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
                                 <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
+                                {r.rating_from_client !== null && (
+                                  <span className="text-[11px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
+                                )}
                               </div>
                             </div>
-                            <div className="flex-shrink-0 min-w-[120px] text-right">
+                            <div className="flex-shrink-0 min-w-[120px] text-right" onClick={(e) => e.stopPropagation()}>
                               <FeeCell
                                 id={r.id} fee={r.instructor_fee} editing={editingIFee}
                                 onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
@@ -910,7 +971,7 @@ export default function SettlementPage() {
                                 saving={iFeeSaving}
                               />
                             </div>
-                            <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]">
+                            <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]" onClick={(e) => e.stopPropagation()}>
                               <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${noFee ? "bg-gray-100 text-gray-400" : "bg-amber-100 text-amber-700"}`}>
                                 {noFee ? "금액 미입력" : "미지급"}
                               </span>
@@ -927,6 +988,8 @@ export default function SettlementPage() {
                         );
                       })}
                     </div>
+                    <Pagination page={iUnpaidPage} total={unpaidIFees.length} pageSize={I_PAGE_SIZE} onChange={setIUnpaidPage} />
+                    </>
                   )}
                 </div>
 
@@ -951,12 +1014,18 @@ export default function SettlementPage() {
                       {paidIFees.length === 0 ? (
                         <div className="flex items-center justify-center py-6 text-gray-300 text-sm">완료된 항목이 없습니다.</div>
                       ) : (
-                        paidIFees.map((r) => {
+                        <>
+                        {paidIFees.slice((iPaidPage - 1) * I_PAGE_SIZE, iPaidPage * I_PAGE_SIZE).map((r) => {
                           const name = r.match?.leader?.profiles?.name ?? "—";
                           return (
-                            <div key={r.id} className="flex items-center gap-4 px-5 py-4 border-l-4 border-l-green-300 bg-green-50/30 hover:bg-green-50/60 transition-colors opacity-75">
-                              <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-sm font-black flex-shrink-0">
-                                {name.charAt(0)}
+                            <div key={r.id} onClick={() => setSelectedIFee(r)} className="flex items-center gap-4 px-5 py-4 border-l-4 border-l-green-300 bg-green-50/30 hover:bg-green-50/60 transition-colors opacity-75 cursor-pointer">
+                              <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden">
+                                {r.image_urls?.length > 0 ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={r.image_urls[0]} alt="현장 사진" className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full bg-green-100 text-green-700 flex items-center justify-center text-sm font-black">{name.charAt(0)}</div>
+                                )}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-0.5">
@@ -967,12 +1036,15 @@ export default function SettlementPage() {
                                 <div className="flex items-center gap-3 mt-1">
                                   <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
                                   <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
+                                  {r.rating_from_client !== null && (
+                                    <span className="text-[11px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
+                                  )}
                                 </div>
                               </div>
                               <div className="flex-shrink-0 min-w-[120px] text-right">
                                 <span className="text-sm font-bold text-green-600">{fmtWon(r.instructor_fee)}</span>
                               </div>
-                              <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]">
+                              <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]" onClick={(e) => e.stopPropagation()}>
                                 <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-green-100 text-green-700">✓ 지급완료</span>
                                 <button
                                   onClick={() => markIFeePaid(r.id, false)}
@@ -983,7 +1055,9 @@ export default function SettlementPage() {
                               </div>
                             </div>
                           );
-                        })
+                        })}
+                        <Pagination page={iPaidPage} total={paidIFees.length} pageSize={I_PAGE_SIZE} onChange={setIPaidPage} />
+                        </>
                       )}
                     </div>
                   )}
@@ -1013,123 +1087,383 @@ export default function SettlementPage() {
               ))}
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-hwaseong-text text-sm">대여료 목록</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">대여 신청된 매칭 요청 기준. 금액을 클릭해 수정, 확정 후 수납처리 하세요.</p>
-                </div>
-                <div className="flex gap-1">
-                  {(["all", "unpaid", "paid"] as const).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setRFeeFilter(f)}
-                      className={`text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors ${
-                        rFeeFilter === f ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                      }`}
-                    >
-                      {f === "all" ? "전체" : f === "unpaid" ? `미수납 ${rUnpaidCount}` : "수납완료"}
-                    </button>
-                  ))}
-                </div>
+            {fetching ? (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
+            ) : rentalFees.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center h-32 text-gray-300">
+                <p className="text-3xl mb-1">🏢</p>
+                <p className="text-xs">대여 신청된 강의가 없습니다.</p>
               </div>
+            ) : (
+              <div className="space-y-3">
 
-              {fetching ? (
-                <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
-              ) : filteredRFees.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-32 text-gray-300">
-                  <p className="text-3xl mb-1">🏢</p>
-                  <p className="text-xs">대여 신청된 강의가 없습니다.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50 text-xs text-gray-400 font-semibold">
-                        <th className="text-left px-4 py-3">수요처</th>
-                        <th className="text-left px-4 py-3">강의명</th>
-                        <th className="text-left px-4 py-3">대여 항목</th>
-                        <th className="text-left px-4 py-3 whitespace-nowrap">강의 일자</th>
-                        <th className="text-right px-4 py-3 whitespace-nowrap">확정 대여료</th>
-                        <th className="text-right px-4 py-3 whitespace-nowrap">참고 금액</th>
-                        <th className="text-center px-4 py-3">상태</th>
-                        <th className="text-center px-4 py-3">처리</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {filteredRFees.map((r) => {
-                        const paid = r.rental_fee_paid_at !== null;
-                        const items: string[] = [];
-                        if (r.needs_venue) items.push(r.venue?.name ?? "공간");
-                        if (r.needs_equipment) items.push(`노트북 ${r.rental_equipment_count}대`);
+                {/* ── 미수납 섹션 ── */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3.5 bg-amber-50/60 border-b border-amber-100 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">⏳</span>
+                      <span className="text-sm font-bold text-hwaseong-text">수납 처리 필요</span>
+                      {unpaidRFees.length > 0 && (
+                        <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{unpaidRFees.length}건</span>
+                      )}
+                    </div>
+                    {rUnpaidTotal > 0 && (
+                      <span className="text-sm font-bold text-red-500">{fmtWon(rUnpaidTotal)}</span>
+                    )}
+                  </div>
+                  {unpaidRFees.length === 0 ? (
+                    <div className="flex items-center justify-center py-8 text-gray-300 text-sm gap-2">
+                      <span>🎉</span> 미수납 항목이 없습니다.
+                    </div>
+                  ) : (
+                    <>
+                    <div className="divide-y divide-gray-50">
+                      {unpaidRFees.slice((rUnpaidPage - 1) * R_PAGE_SIZE, rUnpaidPage * R_PAGE_SIZE).map((r) => {
+                        const noFee = r.rental_fee_total === 0;
+                        const clientName = r.client?.name ?? "—";
                         return (
-                          <tr key={r.id} className={`hover:bg-gray-50/60 transition-colors ${paid ? "opacity-60" : ""}`}>
-                            <td className="px-4 py-3.5">
-                              <p className="font-semibold text-hwaseong-text text-xs">{r.client?.name ?? "—"}</p>
-                            </td>
-                            <td className="px-4 py-3.5 max-w-[160px]">
-                              <p className="text-xs text-gray-700 line-clamp-1">{r.title}</p>
-                              <p className="text-[10px] text-gray-400">{r.category}</p>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className="flex flex-col gap-0.5">
-                                {items.map((item) => (
-                                  <span key={item} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full w-fit">{item}</span>
-                                ))}
+                          <div key={r.id} onClick={() => setSelectedRFee(r)} className={`flex items-center gap-4 px-5 py-4 border-l-4 ${noFee ? "border-l-gray-200" : "border-l-orange-400"} hover:bg-gray-50/60 transition-colors cursor-pointer`}>
+                            <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center text-base flex-shrink-0">
+                              {r.needs_venue && r.needs_equipment ? "🏢" : r.needs_venue ? "🏢" : "💻"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="text-sm font-bold text-hwaseong-text truncate">{clientName}</span>
+                                <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full flex-shrink-0">{r.category}</span>
                               </div>
-                            </td>
-                            <td className="px-4 py-3.5 text-xs text-gray-500 whitespace-nowrap">
-                              {fmtDate(r.start_date)}
-                            </td>
-                            <td className="px-4 py-3.5 text-right">
-                              <FeeCell
-                                id={r.id} fee={r.rental_fee_total} editing={editingRFee}
-                                onStartEdit={(id, fee) => setEditingRFee({ id, fee: String(fee) })}
-                                onSave={saveRFee} onCancel={() => setEditingRFee(null)}
-                                saving={rFeeSaving}
-                              />
-                            </td>
-                            <td className="px-4 py-3.5 text-right text-xs text-gray-400 whitespace-nowrap">
-                              {r.suggested_fee > 0 ? (
-                                <span title="설정 기준 자동 산출 금액">{fmtWon(r.suggested_fee)}</span>
-                              ) : "—"}
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${paid ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                                {paid ? "✓ 수납완료" : "미수납"}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              {!paid ? (
-                                <button
-                                  onClick={() => markRFeePaid(r.id, true)}
-                                  disabled={r.rental_fee_total === 0}
-                                  className="text-xs font-bold px-3 py-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                                  title={r.rental_fee_total === 0 ? "대여료를 먼저 입력해주세요" : "수납 처리"}
-                                >
-                                  수납처리
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => markRFeePaid(r.id, false)}
-                                  className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors"
-                                >
-                                  취소
-                                </button>
+                              <p className="text-xs text-gray-600 truncate">{r.title}</p>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <span className="text-[11px] text-gray-400">📅 {fmtDate(r.start_date)}</span>
+                                {r.needs_venue && (
+                                  <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">🏢 강의실: {r.venue?.name ?? "—"}</span>
+                                )}
+                                {r.needs_equipment && (
+                                  <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full">💻 장비: 노트북 {r.rental_equipment_count}대</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex-shrink-0 min-w-[140px] text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="mb-1">
+                                <FeeCell
+                                  id={r.id} fee={r.rental_fee_total} editing={editingRFee}
+                                  onStartEdit={(id, fee) => setEditingRFee({ id, fee: String(fee) })}
+                                  onSave={saveRFee} onCancel={() => setEditingRFee(null)}
+                                  saving={rFeeSaving}
+                                />
+                              </div>
+                              {r.suggested_fee > 0 && (
+                                <p className="text-[10px] text-gray-400" title="설정 기준 자동 산출 금액">참고 {fmtWon(r.suggested_fee)}</p>
                               )}
-                            </td>
-                          </tr>
+                            </div>
+                            <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]" onClick={(e) => e.stopPropagation()}>
+                              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${noFee ? "bg-gray-100 text-gray-400" : "bg-amber-100 text-amber-700"}`}>
+                                {noFee ? "금액 미입력" : "미수납"}
+                              </span>
+                              <button
+                                onClick={() => markRFeePaid(r.id, true)}
+                                disabled={noFee}
+                                className="text-xs font-bold px-3 py-1.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors w-full text-center"
+                                title={noFee ? "대여료를 먼저 입력해주세요" : "수납 처리"}
+                              >
+                                수납처리
+                              </button>
+                            </div>
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
+                    </div>
+                    <Pagination page={rUnpaidPage} total={unpaidRFees.length} pageSize={R_PAGE_SIZE} onChange={setRUnpaidPage} />
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {/* ── 수납완료 섹션 (접기/펼치기) ── */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                  <button
+                    onClick={() => setShowPaidRFees(!showPaidRFees)}
+                    className="w-full px-5 py-3.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">✅</span>
+                      <span className="text-sm font-bold text-gray-500">수납 완료</span>
+                      <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{paidRFees.length}건</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-bold text-green-600">{fmtWon(rPaidTotal)}</span>
+                      <span className="text-gray-400 text-xs">{showPaidRFees ? "▲" : "▼"}</span>
+                    </div>
+                  </button>
+                  {showPaidRFees && (
+                    <div className="divide-y divide-gray-50 border-t border-gray-100">
+                      {paidRFees.length === 0 ? (
+                        <div className="flex items-center justify-center py-6 text-gray-300 text-sm">완료된 항목이 없습니다.</div>
+                      ) : (
+                        <>
+                        {paidRFees.slice((rPaidPage - 1) * R_PAGE_SIZE, rPaidPage * R_PAGE_SIZE).map((r) => {
+                          const clientName = r.client?.name ?? "—";
+                          return (
+                            <div key={r.id} onClick={() => setSelectedRFee(r)} className="flex items-center gap-4 px-5 py-4 border-l-4 border-l-green-300 bg-green-50/30 hover:bg-green-50/60 transition-colors opacity-75 cursor-pointer">
+                              <div className="w-10 h-10 rounded-full bg-green-100 text-green-700 flex items-center justify-center text-base flex-shrink-0">
+                                {r.needs_venue ? "🏢" : "💻"}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className="text-sm font-bold text-gray-500 truncate">{clientName}</span>
+                                  <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full flex-shrink-0">{r.category}</span>
+                                </div>
+                                <p className="text-xs text-gray-400 truncate">{r.title}</p>
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                  <span className="text-[11px] text-gray-400">📅 {fmtDate(r.start_date)}</span>
+                                  {r.needs_venue && (
+                                    <span className="text-[10px] bg-gray-50 text-gray-400 px-1.5 py-0.5 rounded-full">🏢 강의실: {r.venue?.name ?? "—"}</span>
+                                  )}
+                                  {r.needs_equipment && (
+                                    <span className="text-[10px] bg-gray-50 text-gray-400 px-1.5 py-0.5 rounded-full">💻 장비: 노트북 {r.rental_equipment_count}대</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex-shrink-0 min-w-[120px] text-right">
+                                <span className="text-sm font-bold text-green-600">{fmtWon(r.rental_fee_total)}</span>
+                              </div>
+                              <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-green-100 text-green-700">✓ 수납완료</span>
+                                <button
+                                  onClick={() => markRFeePaid(r.id, false)}
+                                  className="text-[10px] text-gray-300 hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors w-full text-center"
+                                >
+                                  수납 취소
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <Pagination page={rPaidPage} total={paidRFees.length} pageSize={R_PAGE_SIZE} onChange={setRPaidPage} />
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
           </>
         )}
 
       </DashboardLayout>
+
+      {/* 강사료 보고서 모달 */}
+      {selectedIFee && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+          onClick={() => setSelectedIFee(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 모달 헤더 */}
+            <div className="sticky top-0 bg-white px-6 pt-5 pb-4 border-b border-gray-100 flex items-start justify-between gap-3 z-10">
+              <div>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ 관리자 승인</span>
+                  <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{selectedIFee.match?.category ?? "—"}</span>
+                  {selectedIFee.instructor_fee_paid_at
+                    ? <span className="text-[10px] bg-green-50 text-green-700 font-bold px-2 py-0.5 rounded-full">✓ 강사료 지급완료</span>
+                    : <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 강사료 미지급</span>
+                  }
+                </div>
+                <h3 className="font-bold text-hwaseong-text text-base leading-tight">{selectedIFee.match?.title ?? "—"}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{selectedIFee.match?.leader?.profiles?.name ?? "—"} 강사</p>
+              </div>
+              <button
+                onClick={() => setSelectedIFee(null)}
+                className="flex-shrink-0 w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+              {/* 기본 정보 */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                {[
+                  { label: "강사",     value: selectedIFee.match?.leader?.profiles?.name ?? "—" },
+                  { label: "수요처",   value: selectedIFee.match?.client?.name ?? "—" },
+                  { label: "강의 일자", value: fmtDate(selectedIFee.lecture_date) },
+                  { label: "강의 주소", value: selectedIFee.match?.address ?? "—" },
+                  { label: "강의 형태", value: selectedIFee.match?.location_type ? (LOC_LABELS[selectedIFee.match.location_type] ?? selectedIFee.match.location_type) : "—" },
+                  { label: "참석 인원", value: `${selectedIFee.attendance_count}명` },
+                  { label: "강사료",   value: selectedIFee.instructor_fee > 0 ? fmtWon(selectedIFee.instructor_fee) : "미입력" },
+                  { label: "지급 일시", value: selectedIFee.instructor_fee_paid_at ? fmtDateTime(selectedIFee.instructor_fee_paid_at) : "—" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex gap-2">
+                    <span className="text-gray-400 text-xs w-20 flex-shrink-0 pt-0.5">{label}</span>
+                    <span className="text-hwaseong-text text-xs font-semibold">{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 만족도 평점 */}
+              {selectedIFee.rating_from_client !== null && (
+                <div className="bg-amber-50 rounded-2xl p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                    <span className="text-xl font-black text-amber-500">{Number(selectedIFee.rating_from_client).toFixed(1)}</span>
+                  </div>
+                  <div>
+                    <StarRating value={selectedIFee.rating_from_client} />
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      {selectedIFee.rating_from_client >= 4.5 ? "매우 만족" : selectedIFee.rating_from_client >= 3.5 ? "만족" : selectedIFee.rating_from_client >= 2.5 ? "보통" : "아쉬움"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 강의 일지 */}
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">강의 일지</p>
+                <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 rounded-xl px-4 py-3">
+                  {selectedIFee.report_text || <span className="text-gray-300">작성된 강의 일지가 없습니다.</span>}
+                </p>
+              </div>
+
+              {/* 현장 사진 */}
+              {selectedIFee.image_urls?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">현장 사진 ({selectedIFee.image_urls.length}장)</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {selectedIFee.image_urls.map((url, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setLightboxImg(url)}
+                        className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 hover:ring-2 hover:ring-hwaseong-blue/60 transition-all group"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt={`현장 사진 ${i + 1}`} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                          <span className="text-white opacity-0 group-hover:opacity-100 text-lg">🔍</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 관리자 메모 */}
+              {selectedIFee.admin_note && (
+                <div className="bg-gray-50 rounded-xl px-4 py-3">
+                  <p className="text-[11px] text-gray-400 mb-1">관리자 메모</p>
+                  <p className="text-xs text-gray-700">{selectedIFee.admin_note}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 대여료 상세 모달 */}
+      {selectedRFee && (
+        <div
+          className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+          onClick={() => setSelectedRFee(null)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div className="sticky top-0 bg-white px-6 pt-5 pb-4 border-b border-gray-100 flex items-start justify-between gap-3 z-10">
+              <div>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{selectedRFee.category}</span>
+                  {selectedRFee.rental_fee_paid_at
+                    ? <span className="text-[10px] bg-green-50 text-green-700 font-bold px-2 py-0.5 rounded-full">✓ 수납완료</span>
+                    : <span className="text-[10px] bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 미수납</span>
+                  }
+                </div>
+                <h3 className="font-bold text-hwaseong-text text-base leading-tight">{selectedRFee.title}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{selectedRFee.client?.name ?? "—"} 수요처</p>
+              </div>
+              <button
+                onClick={() => setSelectedRFee(null)}
+                className="flex-shrink-0 w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-5">
+              {/* 기본 정보 */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+                {[
+                  { label: "수요처",   value: selectedRFee.client?.name ?? "—" },
+                  { label: "강의 일자", value: fmtDate(selectedRFee.start_date) },
+                  { label: "확정 대여료", value: selectedRFee.rental_fee_total > 0 ? fmtWon(selectedRFee.rental_fee_total) : "미입력" },
+                  { label: "수납 일시", value: selectedRFee.rental_fee_paid_at ? fmtDateTime(selectedRFee.rental_fee_paid_at) : "—" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex gap-2">
+                    <span className="text-gray-400 text-xs w-20 flex-shrink-0 pt-0.5">{label}</span>
+                    <span className="text-hwaseong-text text-xs font-semibold">{value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* 공간 대여 상세 */}
+              {selectedRFee.needs_venue && selectedRFee.venue && (
+                <div className="bg-indigo-50 rounded-2xl p-4 space-y-2">
+                  <p className="text-xs font-bold text-indigo-700 flex items-center gap-1.5">🏢 강의실 대여</p>
+                  <div className="space-y-1.5">
+                    <div className="flex gap-2">
+                      <span className="text-indigo-400 text-xs w-14 flex-shrink-0">공간명</span>
+                      <span className="text-indigo-900 text-xs font-semibold">{selectedRFee.venue.name}</span>
+                    </div>
+                    {selectedRFee.venue.fee_per_use > 0 && (
+                      <div className="flex gap-2">
+                        <span className="text-indigo-400 text-xs w-14 flex-shrink-0">기준 요금</span>
+                        <span className="text-indigo-900 text-xs font-semibold">{fmtWon(selectedRFee.venue.fee_per_use)}/{selectedRFee.venue.fee_unit}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 장비 대여 상세 */}
+              {selectedRFee.needs_equipment && (
+                <div className="bg-purple-50 rounded-2xl p-4 space-y-2">
+                  <p className="text-xs font-bold text-purple-700 flex items-center gap-1.5">💻 장비 대여</p>
+                  <div className="space-y-1.5">
+                    <div className="flex gap-2">
+                      <span className="text-purple-400 text-xs w-14 flex-shrink-0">수량</span>
+                      <span className="text-purple-900 text-xs font-semibold">노트북 {selectedRFee.rental_equipment_count}대</span>
+                    </div>
+                    {selectedRFee.equipment_fee_per_unit > 0 && (
+                      <div className="flex gap-2">
+                        <span className="text-purple-400 text-xs w-14 flex-shrink-0">단가</span>
+                        <span className="text-purple-900 text-xs font-semibold">{fmtWon(selectedRFee.equipment_fee_per_unit)}/대</span>
+                      </div>
+                    )}
+                    {selectedRFee.suggested_fee > 0 && (
+                      <div className="flex gap-2">
+                        <span className="text-purple-400 text-xs w-14 flex-shrink-0">참고 금액</span>
+                        <span className="text-purple-900 text-xs font-semibold">{fmtWon(selectedRFee.suggested_fee)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 요청사항 */}
+              {selectedRFee.rental_notes && (
+                <div>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">요청사항</p>
+                  <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 rounded-xl px-4 py-3">
+                    {selectedRFee.rental_notes}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 이미지 라이트박스 */}
       {lightboxImg && (

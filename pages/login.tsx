@@ -7,6 +7,21 @@ import { useAuth, ROLE_REDIRECTS } from "@/lib/auth-context";
 
 type LoginRole = "leader" | "client" | "admin";
 
+const SAMPLE_ACCOUNTS: Partial<Record<LoginRole, { name: string; email: string }[]>> = {
+  leader: [
+    { name: "김동탄", email: "leader1@seedtest.aitda" },
+    { name: "이향남", email: "leader2@seedtest.aitda" },
+    { name: "박봉담", email: "leader3@seedtest.aitda" },
+    { name: "최우정", email: "leader4@seedtest.aitda" },
+    { name: "정화성", email: "leader5@seedtest.aitda" },
+  ],
+  client: [
+    { name: "화성교육지원청", email: "client1@seedtest.aitda" },
+    { name: "테스트 수요처", email: "client@test.aitda" },
+  ],
+};
+const SAMPLE_PW = "Test1234!";
+
 const ROLE_CONFIG: Record<LoginRole, {
   icon: string; label: string; sub: string;
   gradient: string; border: string; badge: string; badgeStyle: string;
@@ -43,6 +58,7 @@ export default function LoginPage() {
   const [editingEmail, setEditingEmail] = useState(false);
   const [editEmailValue, setEditEmailValue] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [showSamples, setShowSamples] = useState(false);
 
   useEffect(() => {
     if (!loading && user) {
@@ -59,6 +75,7 @@ export default function LoginPage() {
   function pickRole(role: LoginRole) {
     setSelectedRole(role);
     setError(null);
+    setShowSamples(false);
     setStep(2);
   }
 
@@ -366,6 +383,37 @@ export default function LoginPage() {
                   ) : "로그인"}
                 </button>
               </form>
+
+              {selectedRole && SAMPLE_ACCOUNTS[selectedRole] && (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowSamples((v) => !v)}
+                    className="w-full flex items-center justify-between text-xs text-gray-400 hover:text-gray-600 transition-colors py-1"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span>🧪</span>
+                      <span>개발자 — 테스트 계정으로 빠른 입력</span>
+                    </span>
+                    <span>{showSamples ? "▲" : "▼"}</span>
+                  </button>
+                  {showSamples && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {SAMPLE_ACCOUNTS[selectedRole]!.map((acc) => (
+                        <button
+                          key={acc.email}
+                          type="button"
+                          onClick={() => { setEmail(acc.email); setPassword(SAMPLE_PW); setError(null); }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-hwaseong-blue/10 hover:text-hwaseong-blue border border-gray-200 hover:border-hwaseong-blue/30 rounded-lg text-xs font-medium text-gray-600 transition-colors"
+                        >
+                          <span>{acc.name}</span>
+                          <span className="text-gray-400 font-normal">{acc.email.split("@")[0]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mt-5 pt-5 border-t border-gray-100 flex items-center justify-between">
                 <Link href="/register" className="text-sm text-hwaseong-skyblue hover:underline font-medium">

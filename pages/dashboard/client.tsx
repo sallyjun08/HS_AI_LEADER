@@ -165,7 +165,8 @@ type Leader = {
   is_verified: boolean;
   rating_avg: number;
   specialties: string[];
-  profiles: { name: string } | null;
+  phone: string | null;
+  profiles: { name: string; email: string | null } | null;
 };
 
 const FEE_PER_SESSION = 30_000;
@@ -228,6 +229,7 @@ type MatchRequest = {
   target_audience: string[] | null;
   participant_count: number;
   session_count?: number;
+  lecture_hours?: number;
   start_date: string;
   address: string | null;
   notes: string | null;
@@ -291,11 +293,21 @@ const STATUS_MAP: Record<string, { label: string; cls: string; icon: string; des
 type ClientReport = {
   id: string;
   match_id: string;
+  session_index: number;
+  lecture_date: string | null;
+  lecture_dates: string[];
+  attendance_count: number;
+  report_text: string | null;
+  image_urls: string[];
   rating_from_client: number | null;
   client_feedback: string | null;
+  client_rejected_at: string | null;
+  client_rejection_reason: string | null;
+  submitted_at: string;
 };
 
-type ReviewState = { reportId: string; rating: number; feedback: string };
+type ReviewState    = { reportId: string; rating: number; feedback: string };
+type RejectionState = { reportId: string; reason: string };
 
 export default function ClientDashboard() {
   const { user, loading, signOut } = useAuth();
@@ -321,12 +333,15 @@ export default function ClientDashboard() {
   const [rentalSettings, setRentalSettings] = useState<RentalSetting[]>([]);
   const [venueDistrictFilter, setVenueDistrictFilter] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [reviewState, setReviewState] = useState<ReviewState | null>(null);
+  const [reviewState, setReviewState]       = useState<ReviewState | null>(null);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [rejectionState, setRejectionState] = useState<RejectionState | null>(null);
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [activePage, setActivePage] = useState(1);
   const [completedPage, setCompletedPage] = useState(1);
+  const [clientFilter, setClientFilter] = useState("all");
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "client")) router.replace("/login");
@@ -426,26 +441,78 @@ export default function ClientDashboard() {
     }
   }
 
+  async function submitRejection(reportId: string, reason: string) {
+    if (!reason.trim()) return;
+    setRejectSubmitting(true);
+    try {
+      const res = await fetch(`/api/activity-reports/${reportId}/reject`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (res.ok) {
+        setRejectionState(null);
+        await fetchAll();
+      }
+    } finally {
+      setRejectSubmitting(false);
+    }
+  }
+
   if (loading || !user) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
 
   const reportByMatchId = Object.fromEntries(reports.map((r) => [r.match_id, r]));
+  // 매칭별 전체 보고서 목록 (장기정기형 회차 진행 현황용)
+  const reportsByMatchId = reports.reduce<Record<string, ClientReport[]>>((acc, r) => {
+    (acc[r.match_id] ??= []).push(r);
+    return acc;
+  }, {});
 
   const PAGE_SIZE = 5;
-  const activeRequests = requests.filter((r) => r.status !== "completed");
-  const completedRequests = [...requests.filter((r) => r.status === "completed")]
-    .sort((a, b) => b.start_date.localeCompare(a.start_date));
-
-  const pagedActive = activeRequests.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
-  const pagedCompleted = completedRequests.slice((completedPage - 1) * PAGE_SIZE, completedPage * PAGE_SIZE);
+  // 수요처 기준 완료됨: status=completed + 보고서 있음 + 수요처가 평가(승인)한 것
+  const activeRequests = requests.filter((r) => {
+    if (r.status !== "completed") return true;
+    const report = reportByMatchId[r.id];
+    if (!report) return true;                          // 보고서 미제출
+    if (report.client_rejected_at) return true;        // 반려 → 재작성 대기
+    return report.rating_from_client === null;         // 미평가 → 평가 대기
+  });
+  const completedRequests = [...requests.filter((r) => {
+    if (r.status !== "completed") return false;
+    const report = reportByMatchId[r.id];
+    if (!report) return false;
+    if (report.client_rejected_at) return false;
+    return report.rating_from_client !== null;         // 수요처 평가 완료
+  })].sort((a, b) => b.start_date.localeCompare(a.start_date));
 
   const pending = requests.filter((r) => r.status === "pending").length;
   const matched = requests.filter((r) => ["matched", "ongoing"].includes(r.status)).length;
   const completed = completedRequests.length;
-  const totalFee = requests
-    .filter((r) => r.status !== "cancelled")
-    .reduce((sum, r) => sum + (r.session_count ?? 1) * FEE_PER_SESSION, 0);
+
+  const countByFilter: Record<string, number> = {
+    all:      requests.length,
+    pending:  requests.filter((r) => r.status === "pending").length,
+    matched:  requests.filter((r) => r.status === "matched").length,
+    ongoing:  requests.filter((r) => r.status === "ongoing").length,
+    awaiting: activeRequests.filter((r) => r.status === "completed").length,
+    done:     completedRequests.length,
+  };
+
+  const filteredActive = (() => {
+    if (clientFilter === "all")      return activeRequests;
+    if (clientFilter === "pending")  return activeRequests.filter((r) => r.status === "pending");
+    if (clientFilter === "matched")  return activeRequests.filter((r) => r.status === "matched");
+    if (clientFilter === "ongoing")  return activeRequests.filter((r) => r.status === "ongoing");
+    if (clientFilter === "awaiting") return activeRequests.filter((r) => r.status === "completed");
+    return [];
+  })();
+
+  const showCompletedSection = clientFilter === "all" || clientFilter === "done";
+
+  const pagedActive = filteredActive.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
+  const pagedCompleted = completedRequests.slice((completedPage - 1) * PAGE_SIZE, completedPage * PAGE_SIZE);
 
   // 강의 유형별 회차 제한
   const selectedType = LECTURE_TYPES.find((t) => t.value === form.lectureType);
@@ -519,15 +586,6 @@ export default function ClientDashboard() {
               </div>
             ))}
           </div>
-          {totalFee > 0 && (
-            <div className="bg-black/30 border-t border-white/10 px-5 py-2.5 flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-green-200 text-xs">
-                <span>💰</span>
-                <span>진행 중인 강의 예상 강사비 합계</span>
-              </div>
-              <span className="text-white font-bold text-sm">{formatKRW(totalFee)}</span>
-            </div>
-          )}
         </div>
 
         {/* 목록 헤더 */}
@@ -535,7 +593,7 @@ export default function ClientDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-bold text-hwaseong-text text-sm">매칭 요청 현황</p>
-              <p className="text-xs text-gray-400 mt-0.5">진행 중 {activeRequests.length}건{completed > 0 ? ` · 완료 ${completed}건` : ""}</p>
+              <p className="text-xs text-gray-400 mt-0.5">진행 중 {filteredActive.length}건{completed > 0 ? ` · 완료 ${completed}건` : ""}</p>
             </div>
             <button
               onClick={() => setShowForm(true)}
@@ -547,10 +605,42 @@ export default function ClientDashboard() {
           </div>
         )}
 
+        {/* 단계별 필터 */}
+        {!showForm && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {([
+              { key: "all",      label: "전체",       icon: "📋", bg: "bg-gray-100",  border: "border-gray-300",   text: "text-gray-700"   },
+              { key: "pending",  label: "검토·매칭중", icon: "🔍", bg: "bg-amber-50",  border: "border-amber-300",  text: "text-amber-700"  },
+              { key: "matched",  label: "수락 대기",   icon: "⏳", bg: "bg-sky-50",    border: "border-sky-300",    text: "text-sky-700"    },
+              { key: "ongoing",  label: "진행 확정",   icon: "✅", bg: "bg-green-50",  border: "border-green-300",  text: "text-green-700"  },
+              { key: "awaiting", label: "평가 대기",   icon: "📝", bg: "bg-orange-50", border: "border-orange-300", text: "text-orange-700" },
+              { key: "done",     label: "완료",        icon: "🎓", bg: "bg-teal-50",   border: "border-teal-300",   text: "text-teal-700"   },
+            ] as const).map((f) => {
+              const isActive = clientFilter === f.key;
+              const cnt = countByFilter[f.key] ?? 0;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => { setClientFilter(f.key); setActivePage(1); setCompletedPage(1); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 flex-shrink-0 transition-all ${
+                    isActive
+                      ? `${f.bg} ${f.border} ${f.text}`
+                      : "bg-white border-gray-100 text-gray-500 hover:border-gray-200"
+                  }`}
+                >
+                  <span>{f.icon}</span>
+                  <span>{f.label}</span>
+                  <span className={`font-black ${isActive ? f.text : "text-gray-400"}`}>{cnt}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* 매칭 요청 목록 */}
         {!showForm && (
           <div className="space-y-4">
-            {activeRequests.length === 0 && (
+            {filteredActive.length === 0 && clientFilter !== "done" && (
               <div className="bg-white rounded-2xl p-12 text-center border border-gray-100">
                 <p className="text-5xl mb-4">📋</p>
                 <p className="font-bold text-gray-500 mb-1">진행 중인 매칭 요청이 없습니다</p>
@@ -607,12 +697,6 @@ export default function ClientDashboard() {
                       })()}
                       <span className="bg-gray-50 px-2 py-1 rounded-lg">🎯 {req.category}</span>
                       <span className="bg-gray-50 px-2 py-1 rounded-lg">👥 {req.participant_count}명</span>
-                      {req.session_count && req.session_count > 0 && (
-                        <span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg font-semibold">
-                          💰 {formatKRW(req.session_count * FEE_PER_SESSION)}
-                          <span className="font-normal text-emerald-500 ml-0.5">({req.session_count}회)</span>
-                        </span>
-                      )}
                       {(req.needs_venue || req.needs_equipment) && (
                         <span className="bg-orange-50 text-orange-600 px-2 py-1 rounded-lg">
                           🏢 {[
@@ -632,7 +716,67 @@ export default function ClientDashboard() {
                           {DAY_LABELS[s.day!] ?? s.day} {s.start}~{s.end}
                         </span>
                       ))}
+                      {req.status === "ongoing" && (req.lecture_type === "longterm" || req.lecture_type === "intensive") && req.session_count && (() => {
+                        const done = (reportsByMatchId[req.id] ?? []).length;
+                        return (
+                          <span className="bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg font-semibold">
+                            📊 {done} / {req.session_count}회차 완료
+                          </span>
+                        );
+                      })()}
                     </div>
+
+                    {/* 예상 비용 요약 */}
+                    {req.session_count && req.session_count > 0 && (() => {
+                      const sessions = req.session_count;
+                      const hours   = req.lecture_hours ?? 2;
+                      const instrFee = sessions * FEE_PER_SESSION;
+                      const venue    = req.needs_venue && req.rental_venue_id
+                        ? rentalSettings.find((s) => s.type === "venue" && s.id === req.rental_venue_id)
+                        : null;
+                      const laptop   = rentalSettings.find((s) => s.id === "laptop");
+                      const venueFee = venue ? venue.fee_per_use * hours * sessions : 0;
+                      const equipFee = req.needs_equipment
+                        ? (req.rental_equipment_count ?? 0) * (laptop?.fee_per_use ?? 0) * hours * sessions
+                        : 0;
+                      const rentalFee = venueFee + equipFee;
+                      const total     = instrFee + rentalFee;
+                      return (
+                        <div className="mt-2.5 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-emerald-600">강사비</span>
+                            <span className="font-semibold text-emerald-700">
+                              {formatKRW(instrFee)}
+                              <span className="font-normal text-emerald-400 ml-1">{sessions}회 × 30,000원</span>
+                            </span>
+                          </div>
+                          {rentalFee > 0 && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-orange-500">대여료</span>
+                              <span className="font-semibold text-orange-600">
+                                {formatKRW(rentalFee)}
+                                <span className="font-normal text-orange-400 ml-1">
+                                  {[
+                                    venue && `공간 ${formatKRW(venueFee)}`,
+                                    equipFee > 0 && `장비 ${formatKRW(equipFee)}`,
+                                  ].filter(Boolean).join(" · ")}
+                                </span>
+                              </span>
+                            </div>
+                          )}
+                          {(req.needs_venue || req.needs_equipment) && rentalFee === 0 && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-orange-400">대여료</span>
+                              <span className="text-orange-400">별도 안내</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between pt-1 border-t border-emerald-200">
+                            <span className="text-xs font-bold text-emerald-800">예상 합계</span>
+                            <span className="text-sm font-black text-emerald-800">{formatKRW(total)}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* 수락 대기 중일 때 배정 강사 미리보기 */}
                     {req.status === "matched" && l && (
@@ -670,6 +814,61 @@ export default function ClientDashboard() {
                         <p className="text-xs text-blue-600 bg-blue-50 rounded-xl px-3 py-2">{st.desc}</p>
                       )}
 
+                      {/* 장기정기형 진행 현황 + 회차별 보고서 */}
+                      {req.status === "ongoing" && (req.lecture_type === "longterm" || req.lecture_type === "intensive") && req.session_count && (() => {
+                        const matchReports = [...(reportsByMatchId[req.id] ?? [])]
+                          .sort((a, b) => (a.session_index ?? 0) - (b.session_index ?? 0));
+                        const done = matchReports.length;
+                        const total = req.session_count;
+                        const pct = Math.round((done / total) * 100);
+                        const lastDate = matchReports[matchReports.length - 1]?.lecture_date;
+                        return (
+                          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-bold text-indigo-700">📊 강의 진행 현황</p>
+                              <span className="text-xs font-black text-indigo-600">{done} / {total}회차</span>
+                            </div>
+                            {/* 회차별 도트 */}
+                            <div className="flex gap-1.5 flex-wrap">
+                              {Array.from({ length: total }, (_, i) => (
+                                <div
+                                  key={i}
+                                  className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold ${
+                                    i < done
+                                      ? "bg-indigo-500 text-white"
+                                      : "bg-indigo-100 text-indigo-300"
+                                  }`}
+                                >
+                                  {i + 1}
+                                </div>
+                              ))}
+                            </div>
+                            {/* 프로그레스 바 */}
+                            <div className="h-1.5 bg-indigo-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-indigo-400">{pct}% 완료</span>
+                              {lastDate && (
+                                <span className="text-indigo-400">최근 강의: {lastDate.replace(/-/g, ".")}</span>
+                              )}
+                            </div>
+                            {/* 제출된 회차별 보고서 목록 */}
+                            {matchReports.length > 0 && (
+                              <div className="space-y-2 pt-1">
+                                <p className="text-[11px] font-bold text-indigo-600">회차별 보고서</p>
+                                {matchReports.map((rpt) => (
+                                  <SessionReportCard key={rpt.id} report={rpt} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       {/* 배정된 강사 (안심매칭) */}
                       {l && (
                         <div className={`rounded-xl p-4 ${isRevealed ? "bg-green-50 border border-green-200" : "bg-blue-50 border border-blue-100"}`}>
@@ -702,10 +901,29 @@ export default function ClientDashboard() {
                               )}
                             </div>
                           </div>
+                          {/* 매칭 확정 후 강사 연락처 공개 */}
+                          {isRevealed && (l.phone || l.profiles?.email) && (
+                            <div className="mt-3 pt-3 border-t border-green-100 space-y-1.5">
+                              {l.phone && (
+                                <a href={`tel:${l.phone.replace(/[^0-9+]/g, "")}`}
+                                  className="flex items-center gap-2 text-xs text-green-700 hover:text-green-900">
+                                  <span className="w-5 h-5 bg-green-100 rounded-md flex items-center justify-center text-[10px] flex-shrink-0">📞</span>
+                                  {l.phone}
+                                </a>
+                              )}
+                              {l.profiles?.email && (
+                                <a href={`mailto:${l.profiles.email}`}
+                                  className="flex items-center gap-2 text-xs text-green-700 hover:text-green-900 truncate">
+                                  <span className="w-5 h-5 bg-green-100 rounded-md flex items-center justify-center text-[10px] flex-shrink-0">✉️</span>
+                                  {l.profiles.email}
+                                </a>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
 
-                      {/* 평점 (완료 후) */}
+                      {/* 활동 보고서 + 반려/평가 (완료 후) */}
                       {req.status === "completed" && (() => {
                         const report = reportByMatchId[req.id];
                         if (!report) {
@@ -715,65 +933,23 @@ export default function ClientDashboard() {
                             </p>
                           );
                         }
-                        if (report.rating_from_client !== null) {
-                          return (
-                            <div className="px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-1.5">
-                              <div className="flex items-center gap-2">
-                                <div className="flex gap-0.5">
-                                  {[1,2,3,4,5].map((v) => (
-                                    <span key={v} className={`text-base ${v <= report.rating_from_client! ? "text-amber-400" : "text-gray-200"}`}>★</span>
-                                  ))}
-                                </div>
-                                <span className="text-xs font-semibold text-amber-700">{report.rating_from_client}점</span>
-                                <span className="text-xs text-gray-400">· 평가 완료</span>
-                              </div>
-                              {report.client_feedback && (
-                                <p className="text-xs text-gray-600 leading-relaxed">"{report.client_feedback}"</p>
-                              )}
-                            </div>
-                          );
-                        }
-                        if (reviewState?.reportId === report.id) {
-                          return (
-                            <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
-                              <div className="flex items-center gap-1">
-                                {[1,2,3,4,5].map((v) => (
-                                  <button
-                                    key={v}
-                                    onClick={() => setReviewState((p) => p ? { ...p, rating: v } : p)}
-                                    className={`text-2xl transition-transform hover:scale-110 ${reviewState.rating >= v ? "text-amber-400" : "text-gray-200"}`}
-                                  >★</button>
-                                ))}
-                                <span className="ml-2 text-xs font-bold text-amber-700">{reviewState.rating}점</span>
-                              </div>
-                              <textarea
-                                rows={2}
-                                value={reviewState.feedback}
-                                onChange={(e) => setReviewState((p) => p ? { ...p, feedback: e.target.value } : p)}
-                                placeholder="강사에 대한 피드백을 자유롭게 남겨주세요. (선택)"
-                                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300/40 resize-none bg-white"
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => submitRating(reviewState.reportId, reviewState.rating, reviewState.feedback)}
-                                  disabled={ratingSubmitting}
-                                  className="flex-1 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 disabled:opacity-60"
-                                >{ratingSubmitting ? "제출 중..." : "평가 제출"}</button>
-                                <button
-                                  onClick={() => setReviewState(null)}
-                                  className="px-3 py-1.5 text-xs text-gray-400 rounded-lg hover:bg-gray-100"
-                                >취소</button>
-                              </div>
-                            </div>
-                          );
-                        }
                         return (
-                          <button
-                            onClick={() => setReviewState({ reportId: report.id, rating: 5, feedback: "" })}
-                            className="w-full py-2.5 border border-amber-200 text-amber-700 text-xs font-bold rounded-xl hover:bg-amber-50 transition-colors"
-                          >
-                            ⭐ 만족도 평가 남기기
-                          </button>
+                          <ReportReviewBlock
+                            report={report}
+                            reviewState={reviewState}
+                            rejectionState={rejectionState}
+                            ratingSubmitting={ratingSubmitting}
+                            rejectSubmitting={rejectSubmitting}
+                            onStartReview={() => setReviewState({ reportId: report.id, rating: 5, feedback: "" })}
+                            onStartReject={() => setRejectionState({ reportId: report.id, reason: "" })}
+                            onCancelReview={() => setReviewState(null)}
+                            onCancelReject={() => setRejectionState(null)}
+                            onChangeRating={(v) => setReviewState((p) => p ? { ...p, rating: v } : p)}
+                            onChangeFeedback={(v) => setReviewState((p) => p ? { ...p, feedback: v } : p)}
+                            onChangeReason={(v) => setRejectionState((p) => p ? { ...p, reason: v } : p)}
+                            onSubmitReview={() => submitRating(reviewState!.reportId, reviewState!.rating, reviewState!.feedback)}
+                            onSubmitReject={() => submitRejection(rejectionState!.reportId, rejectionState!.reason)}
+                          />
                         );
                       })()}
                     </div>
@@ -781,17 +957,17 @@ export default function ClientDashboard() {
                 </div>
               );
             })}
-            {activeRequests.length > PAGE_SIZE && (
+            {filteredActive.length > PAGE_SIZE && (
               <div className="flex items-center justify-between px-1 py-2">
                 <button onClick={() => setActivePage((p) => Math.max(1, p - 1))} disabled={activePage === 1}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                   ← 이전
                 </button>
                 <span className="text-xs text-gray-400">
-                  <span className="font-bold text-hwaseong-text">{activePage}</span> / {Math.ceil(activeRequests.length / PAGE_SIZE)} 페이지
-                  <span className="ml-2 text-gray-300">({activeRequests.length}건)</span>
+                  <span className="font-bold text-hwaseong-text">{activePage}</span> / {Math.ceil(filteredActive.length / PAGE_SIZE)} 페이지
+                  <span className="ml-2 text-gray-300">({filteredActive.length}건)</span>
                 </span>
-                <button onClick={() => setActivePage((p) => Math.min(Math.ceil(activeRequests.length / PAGE_SIZE), p + 1))} disabled={activePage === Math.ceil(activeRequests.length / PAGE_SIZE)}
+                <button onClick={() => setActivePage((p) => Math.min(Math.ceil(filteredActive.length / PAGE_SIZE), p + 1))} disabled={activePage === Math.ceil(filteredActive.length / PAGE_SIZE)}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg text-gray-500 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
                   다음 →
                 </button>
@@ -801,7 +977,7 @@ export default function ClientDashboard() {
         )}
 
         {/* 완료된 강의 섹션 */}
-        {!showForm && completedRequests.length > 0 && (
+        {!showForm && completedRequests.length > 0 && showCompletedSection && (
           <div className="rounded-2xl border border-gray-100 overflow-hidden">
             <button
               type="button"
@@ -878,62 +1054,45 @@ export default function ClientDashboard() {
                               </div>
                             </div>
                           )}
-                          {/* 평점 */}
-                          {(() => {
-                            if (!report) {
-                              return <p className="text-xs text-gray-400 text-center py-2">강사가 아직 활동 보고서를 제출하지 않았습니다.</p>;
-                            }
-                            if (report.rating_from_client !== null) {
-                              return (
-                                <div className="px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <div className="flex gap-0.5">
-                                      {[1,2,3,4,5].map((v) => (
-                                        <span key={v} className={`text-base ${v <= report.rating_from_client! ? "text-amber-400" : "text-gray-200"}`}>★</span>
-                                      ))}
-                                    </div>
-                                    <span className="text-xs font-semibold text-amber-700">{report.rating_from_client}점</span>
-                                    <span className="text-xs text-gray-400">· 평가 완료</span>
-                                  </div>
-                                  {report.client_feedback && (
-                                    <p className="text-xs text-gray-600 leading-relaxed">"{report.client_feedback}"</p>
-                                  )}
-                                </div>
-                              );
-                            }
-                            if (reviewState?.reportId === report.id) {
-                              return (
-                                <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
-                                  <div className="flex items-center gap-1">
-                                    {[1,2,3,4,5].map((v) => (
-                                      <button key={v} onClick={() => setReviewState((p) => p ? { ...p, rating: v } : p)}
-                                        className={`text-2xl transition-transform hover:scale-110 ${reviewState.rating >= v ? "text-amber-400" : "text-gray-200"}`}>★</button>
-                                    ))}
-                                    <span className="ml-2 text-xs font-bold text-amber-700">{reviewState.rating}점</span>
-                                  </div>
-                                  <textarea rows={2} value={reviewState.feedback}
-                                    onChange={(e) => setReviewState((p) => p ? { ...p, feedback: e.target.value } : p)}
-                                    placeholder="강사에 대한 피드백을 자유롭게 남겨주세요. (선택)"
-                                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300/40 resize-none bg-white"
-                                  />
-                                  <div className="flex gap-2">
-                                    <button onClick={() => submitRating(reviewState.reportId, reviewState.rating, reviewState.feedback)}
-                                      disabled={ratingSubmitting}
-                                      className="flex-1 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 disabled:opacity-60">
-                                      {ratingSubmitting ? "제출 중..." : "평가 제출"}
-                                    </button>
-                                    <button onClick={() => setReviewState(null)} className="px-3 py-1.5 text-xs text-gray-400 rounded-lg hover:bg-gray-100">취소</button>
-                                  </div>
-                                </div>
-                              );
-                            }
+                          {/* 회차별 보고서 (다회차 강의) */}
+                          {(req.lecture_type === "longterm" || req.lecture_type === "intensive") && req.session_count && (() => {
+                            const matchReports = [...(reportsByMatchId[req.id] ?? [])]
+                              .sort((a, b) => (a.session_index ?? 0) - (b.session_index ?? 0));
+                            if (matchReports.length === 0) return null;
                             return (
-                              <button onClick={() => setReviewState({ reportId: report.id, rating: 5, feedback: "" })}
-                                className="w-full py-2.5 border border-amber-200 text-amber-700 text-xs font-bold rounded-xl hover:bg-amber-50 transition-colors">
-                                ⭐ 만족도 평가 남기기
-                              </button>
+                              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs font-bold text-gray-600">📋 회차별 보고서</p>
+                                  <span className="text-[11px] text-gray-400">{matchReports.length} / {req.session_count}회차</span>
+                                </div>
+                                {matchReports.map((rpt) => (
+                                  <SessionReportCard key={rpt.id} report={rpt} />
+                                ))}
+                              </div>
                             );
                           })()}
+
+                          {/* 활동 보고서 + 반려/평가 */}
+                          {report ? (
+                            <ReportReviewBlock
+                              report={report}
+                              reviewState={reviewState}
+                              rejectionState={rejectionState}
+                              ratingSubmitting={ratingSubmitting}
+                              rejectSubmitting={rejectSubmitting}
+                              onStartReview={() => setReviewState({ reportId: report.id, rating: 5, feedback: "" })}
+                              onStartReject={() => setRejectionState({ reportId: report.id, reason: "" })}
+                              onCancelReview={() => setReviewState(null)}
+                              onCancelReject={() => setRejectionState(null)}
+                              onChangeRating={(v) => setReviewState((p) => p ? { ...p, rating: v } : p)}
+                              onChangeFeedback={(v) => setReviewState((p) => p ? { ...p, feedback: v } : p)}
+                              onChangeReason={(v) => setRejectionState((p) => p ? { ...p, reason: v } : p)}
+                              onSubmitReview={() => submitRating(reviewState!.reportId, reviewState!.rating, reviewState!.feedback)}
+                              onSubmitReject={() => submitRejection(rejectionState!.reportId, rejectionState!.reason)}
+                            />
+                          ) : (
+                            <p className="text-xs text-gray-400 text-center py-2">강사가 아직 활동 보고서를 제출하지 않았습니다.</p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1819,6 +1978,261 @@ export default function ClientDashboard() {
 
       </DashboardLayout>
     </>
+  );
+}
+
+function SessionReportCard({ report }: { report: ClientReport }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasDetail = !!(report.report_text || (report.image_urls?.length > 0));
+  return (
+    <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => hasDetail && setExpanded((v) => !v)}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left ${hasDetail ? "hover:bg-indigo-50/40 cursor-pointer" : "cursor-default"}`}
+      >
+        <div className="w-6 h-6 rounded-lg bg-indigo-500 text-white text-[10px] font-black flex items-center justify-center flex-shrink-0">
+          {(report.session_index ?? 0) + 1}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-indigo-800">
+            {report.lecture_date?.replace(/-/g, ".") ?? "—"}
+          </p>
+          <p className="text-[11px] text-indigo-400">참석 {report.attendance_count}명</p>
+        </div>
+        {hasDetail && (
+          <span className={`text-gray-300 text-xs flex-shrink-0 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>▾</span>
+        )}
+      </button>
+      {expanded && hasDetail && (
+        <div className="px-3 pb-3 space-y-2 border-t border-indigo-50">
+          {report.report_text && (
+            <p className="text-xs text-gray-600 leading-relaxed pt-2 whitespace-pre-line">{report.report_text}</p>
+          )}
+          {report.image_urls?.length > 0 && (
+            <div className="flex gap-2 flex-wrap pt-1">
+              {report.image_urls.map((url, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <a key={i} href={url} target="_blank" rel="noreferrer">
+                  <img
+                    src={url}
+                    alt={`현장 사진 ${i + 1}`}
+                    className="w-20 h-20 object-cover rounded-lg border border-indigo-100 hover:opacity-90 transition-opacity"
+                  />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportReviewBlock({
+  report: r,
+  reviewState,
+  rejectionState,
+  ratingSubmitting,
+  rejectSubmitting,
+  onStartReview,
+  onStartReject,
+  onCancelReview,
+  onCancelReject,
+  onChangeRating,
+  onChangeFeedback,
+  onChangeReason,
+  onSubmitReview,
+  onSubmitReject,
+}: {
+  report: ClientReport;
+  reviewState: ReviewState | null;
+  rejectionState: RejectionState | null;
+  ratingSubmitting: boolean;
+  rejectSubmitting: boolean;
+  onStartReview: () => void;
+  onStartReject: () => void;
+  onCancelReview: () => void;
+  onCancelReject: () => void;
+  onChangeRating: (v: number) => void;
+  onChangeFeedback: (v: string) => void;
+  onChangeReason: (v: string) => void;
+  onSubmitReview: () => void;
+  onSubmitReject: () => void;
+}) {
+  const [showContent, setShowContent] = useState(false);
+
+  const fmtDate = (d: string) =>
+    new Date(d).toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+
+  const dates = r.lecture_dates?.length > 0 ? r.lecture_dates : r.lecture_date ? [r.lecture_date] : [];
+
+  return (
+    <div className="space-y-2">
+      {/* 보고서 내용 토글 */}
+      <button
+        type="button"
+        onClick={() => setShowContent((v) => !v)}
+        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-semibold transition-colors ${
+          showContent
+            ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+            : "bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300"
+        }`}
+      >
+        <span>📄 활동 보고서 내용 확인</span>
+        <span className="text-[10px]">{showContent ? "▲ 접기" : "▼ 펼치기"}</span>
+      </button>
+
+      {showContent && (
+        <div className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-3 space-y-2.5">
+          {/* 강의 날짜 */}
+          {dates.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-indigo-400 mb-1">강의 날짜</p>
+              <div className="flex flex-wrap gap-1.5">
+                {dates.map((d, i) => (
+                  <span key={d} className="text-xs bg-white text-indigo-700 font-semibold px-2.5 py-1 rounded-lg border border-indigo-100">
+                    {dates.length > 1 ? `${i + 1}일차 · ` : ""}{fmtDate(d)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* 참석 인원 */}
+          <div>
+            <p className="text-[10px] font-bold text-indigo-400 mb-0.5">실제 참석</p>
+            <p className="text-sm font-bold text-indigo-800">{r.attendance_count}명</p>
+          </div>
+          {/* 교육 내용 */}
+          {r.report_text && (
+            <div>
+              <p className="text-[10px] font-bold text-indigo-400 mb-1">교육 내용</p>
+              <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line bg-white rounded-lg px-3 py-2 border border-indigo-100">
+                {r.report_text}
+              </p>
+            </div>
+          )}
+          {/* 현장 사진 */}
+          {r.image_urls?.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold text-indigo-400 mb-1.5">현장 사진</p>
+              <div className="flex gap-2 flex-wrap">
+                {r.image_urls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={url} alt={`현장 사진 ${i + 1}`}
+                      className="w-20 h-20 object-cover rounded-lg border border-indigo-100 hover:opacity-80 transition-opacity" />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 이미 반려된 상태 */}
+      {r.client_rejected_at && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+          <span className="text-red-500 flex-shrink-0 mt-0.5">↩</span>
+          <div>
+            <p className="text-xs font-bold text-red-700">반려됨 · 재작성 요청 중</p>
+            <p className="text-xs text-red-600 mt-0.5 leading-relaxed">"{r.client_rejection_reason}"</p>
+          </div>
+        </div>
+      )}
+
+      {/* 이미 평가 완료 */}
+      {r.rating_from_client !== null && (
+        <div className="px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-xl space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5">
+              {[1,2,3,4,5].map((v) => (
+                <span key={v} className={`text-base ${v <= r.rating_from_client! ? "text-amber-400" : "text-gray-200"}`}>★</span>
+              ))}
+            </div>
+            <span className="text-xs font-semibold text-amber-700">{r.rating_from_client}점</span>
+            <span className="text-xs text-gray-400">· 평가 완료</span>
+          </div>
+          {r.client_feedback && (
+            <p className="text-xs text-gray-600 leading-relaxed">"{r.client_feedback}"</p>
+          )}
+        </div>
+      )}
+
+      {/* 반려 입력 폼 */}
+      {!r.client_rejected_at && !r.rating_from_client && rejectionState?.reportId === r.id && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2.5">
+          <p className="text-xs font-bold text-red-700">반려 사유 작성</p>
+          <textarea
+            rows={3}
+            value={rejectionState.reason}
+            onChange={(e) => onChangeReason(e.target.value)}
+            placeholder="재작성을 요청하는 이유를 구체적으로 작성해 주세요. (필수)"
+            className="w-full px-3 py-2 border border-red-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-300/40 resize-none bg-white"
+          />
+          {!rejectionState.reason.trim() && (
+            <p className="text-[10px] text-red-500">반려 사유를 입력해야 합니다.</p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={onSubmitReject}
+              disabled={rejectSubmitting || !rejectionState.reason.trim()}
+              className="flex-1 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {rejectSubmitting ? "처리 중..." : "↩ 반려 처리"}
+            </button>
+            <button onClick={onCancelReject} className="px-3 py-1.5 text-xs text-gray-400 rounded-lg hover:bg-gray-100">
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 평가 입력 폼 */}
+      {!r.client_rejected_at && !r.rating_from_client && reviewState?.reportId === r.id && (
+        <div className="px-3 py-3 bg-amber-50 border border-amber-200 rounded-xl space-y-3">
+          <div className="flex items-center gap-1">
+            {[1,2,3,4,5].map((v) => (
+              <button key={v} onClick={() => onChangeRating(v)}
+                className={`text-2xl transition-transform hover:scale-110 ${reviewState.rating >= v ? "text-amber-400" : "text-gray-200"}`}>
+                ★
+              </button>
+            ))}
+            <span className="ml-2 text-xs font-bold text-amber-700">{reviewState.rating}점</span>
+          </div>
+          <textarea rows={2} value={reviewState.feedback} onChange={(e) => onChangeFeedback(e.target.value)}
+            placeholder="강사에 대한 피드백을 자유롭게 남겨주세요. (선택)"
+            className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-300/40 resize-none bg-white"
+          />
+          <div className="flex gap-2">
+            <button onClick={onSubmitReview} disabled={ratingSubmitting}
+              className="flex-1 py-1.5 bg-amber-500 text-white text-xs font-bold rounded-lg hover:bg-amber-600 disabled:opacity-60">
+              {ratingSubmitting ? "제출 중..." : "평가 제출"}
+            </button>
+            <button onClick={onCancelReview} className="px-3 py-1.5 text-xs text-gray-400 rounded-lg hover:bg-gray-100">취소</button>
+          </div>
+        </div>
+      )}
+
+      {/* 액션 버튼 (아직 평가/반려 안 된 경우) */}
+      {!r.client_rejected_at && !r.rating_from_client &&
+       !reviewState && !rejectionState && (
+        <div className="flex gap-2">
+          <button
+            onClick={onStartReview}
+            className="flex-1 py-2.5 border border-amber-200 text-amber-700 text-xs font-bold rounded-xl hover:bg-amber-50 transition-colors"
+          >
+            ⭐ 만족도 평가
+          </button>
+          <button
+            onClick={onStartReject}
+            className="flex-1 py-2.5 border border-red-200 text-red-600 text-xs font-bold rounded-xl hover:bg-red-50 transition-colors"
+          >
+            ↩ 반려하기
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

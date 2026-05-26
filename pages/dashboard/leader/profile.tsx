@@ -208,6 +208,7 @@ export default function LeaderProfilePage() {
   const [tab, setTab] = useState<Tab>("competency");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
   // 폼 상태
   const [bio, setBio] = useState("");
@@ -218,22 +219,30 @@ export default function LeaderProfilePage() {
   const [weekdays, setWeekdays] = useState<string[]>([]);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
 
-  // 인증 초기화
+  // 인증 가드 + 최신 프로필 조회 (loading 변화 시 1회)
   useEffect(() => {
     if (!loading && (!user || user.role !== "leader")) {
       router.replace("/login");
       return;
     }
-    // 관리자 인증 처리 후 세션에 반영되도록 최신 프로필 재조회
     refresh();
-    if (!user?.leaderProfile) return;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  // 폼 초기화 — leaderProfile이 처음 로드될 때만 실행
+  useEffect(() => {
+    if (initialized || !user?.leaderProfile) return;
     const lp = user.leaderProfile;
-    setSpecialties(lp.specialties ?? []);
+    const allKnownItems = SPECIALTY_GROUPS.flatMap((g) => g.items);
+    setSpecialties((lp.specialties ?? []).filter((s) => allKnownItems.includes(s)));
     setPreferredAudiences(lp.preferredAudiences ?? []);
     setRegions(lp.availableRegions ?? []);
     setWeekdays(lp.availableTimes?.weekdays ?? []);
     setTimeSlots(lp.availableTimes?.time_slots ?? []);
-  }, [loading, user, router]);
+    setBio(lp.bio ?? "");
+    setPhone(lp.phone ?? "");
+    setInitialized(true);
+  }, [user?.leaderProfile, initialized]);
 
   // 프로필 저장
   const save = useCallback(async () => {

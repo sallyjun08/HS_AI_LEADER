@@ -6,6 +6,15 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
 
+type LectureTimeSlot = {
+  date?: string;
+  start?: string;
+  startTime?: string;
+  end?: string;
+  endTime?: string;
+  day?: string;
+};
+
 type MatchInfo = {
   id: string;
   title: string;
@@ -13,6 +22,9 @@ type MatchInfo = {
   address: string | null;
   participant_count: number;
   category: string;
+  lecture_type: "oneday" | "intensive" | "longterm" | null;
+  session_count: number | null;
+  lecture_times: LectureTimeSlot[] | null;
   client: { name: string } | null;
 };
 
@@ -34,13 +46,16 @@ function todayIso(): string {
 export default function ReportPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const matchId = router.query.matchId as string | undefined;
+  const matchId    = router.query.matchId   as string | undefined;
+  const resubmitId = router.query.resubmit  as string | undefined; // 재작성할 보고서 ID
 
   const [match, setMatch] = useState<MatchInfo | null>(null);
   const [fetching, setFetching] = useState(true);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
 
   // Form fields
   const [lectureDate, setLectureDate] = useState(todayIso());
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [attendeeCount, setAttendeeCount] = useState("");
   const [reportText, setReportText] = useState("");
 
@@ -72,11 +87,42 @@ export default function ReportPage() {
         if (Array.isArray(data)) {
           const found = data.find((m) => m.id === matchId);
           setMatch(found ?? null);
+          // 집중코스형: lecture_times의 모든 날짜를 기본 선택
+          if (found?.lecture_type === "intensive" && found.lecture_times) {
+            const dates = found.lecture_times
+              .map((s) => s.date)
+              .filter((d): d is string => !!d)
+              .sort();
+            setSelectedDates(dates);
+          }
         }
       })
       .catch(() => {})
       .finally(() => setFetching(false));
   }, [user, matchId]);
+
+  // ── 재작성: 기존 보고서 내용 불러오기 ────────────────────────────────────
+
+  useEffect(() => {
+    if (!user || !resubmitId) return;
+    fetch("/api/activity-reports")
+      .then((r) => r.json())
+      .then((data: Array<{
+        id: string; lecture_date: string; lecture_dates: string[];
+        attendance_count: number; report_text: string | null;
+        client_rejection_reason: string | null;
+      }>) => {
+        if (!Array.isArray(data)) return;
+        const existing = data.find((r) => r.id === resubmitId);
+        if (!existing) return;
+        setRejectionReason(existing.client_rejection_reason);
+        setLectureDate(existing.lecture_date ?? todayIso());
+        if (existing.lecture_dates?.length > 0) setSelectedDates(existing.lecture_dates);
+        setAttendeeCount(String(existing.attendance_count));
+        setReportText(existing.report_text ?? "");
+      })
+      .catch(() => {});
+  }, [user, resubmitId]);
 
   // ── 사진 업로드 ────────────────────────────────────────────────────────
 
@@ -148,6 +194,11 @@ export default function ReportPage() {
       setSubmitError("교육 내용 요약을 입력해 주세요.");
       return;
     }
+    const isIntensive = match?.lecture_type === "intensive";
+    if (isIntensive && selectedDates.length === 0) {
+      setSubmitError("강의 날짜를 하나 이상 선택해 주세요.");
+      return;
+    }
     const uploading = photos.some((p) => p?.status === "uploading");
     if (uploading) {
       setSubmitError("사진 업로드가 완료될 때까지 기다려 주세요.");
@@ -160,16 +211,18 @@ export default function ReportPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/activity-reports", {
-        method: "POST",
+      const commonBody = isIntensive
+        ? { lectureDates: selectedDates, attendeeCount: Number(attendeeCount), reportText: reportText.trim(), imageUrls }
+        : { lectureDate, attendeeCount: Number(attendeeCount), reportText: reportText.trim(), imageUrls };
+
+      const url    = resubmitId ? `/api/activity-reports/${resubmitId}/resubmit` : "/api/activity-reports";
+      const method = resubmitId ? "PATCH" : "POST";
+      const body   = resubmitId ? commonBody : { ...commonBody, matchId };
+
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          matchId,
-          lectureDate,
-          attendeeCount: Number(attendeeCount),
-          reportText: reportText.trim(),
-          imageUrls,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -177,7 +230,6 @@ export default function ReportPage() {
         throw new Error((err as { error?: string }).error ?? "제출에 실패했습니다.");
       }
 
-      // 성공 → 대시보드로 이동, 성공 메시지 전달
       router.replace("/dashboard/leader?reportSuccess=1");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "오류가 발생했습니다.");
@@ -197,7 +249,10 @@ export default function ReportPage() {
 
   const pendingUpload = photos.some((p) => p?.status === "uploading");
   const filledSlots = photos.filter(Boolean).length;
-  const canSubmit = !submitting && !pendingUpload && attendeeCount && reportText.trim();
+  const isIntensive = match?.lecture_type === "intensive";
+  const canSubmit =
+    !submitting && !pendingUpload && attendeeCount && reportText.trim() &&
+    (!isIntensive || selectedDates.length > 0);
 
   return (
     <>
@@ -236,6 +291,17 @@ export default function ReportPage() {
         {/* 폼 */}
         <form onSubmit={handleSubmit} className="space-y-5">
 
+          {/* ── 반려 사유 안내 (재작성 모드에서만) ── */}
+          {rejectionReason && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-start gap-3">
+              <span className="text-red-500 text-base flex-shrink-0 mt-0.5">↩</span>
+              <div>
+                <p className="text-xs font-bold text-red-700 mb-0.5">수요처 반려 사유</p>
+                <p className="text-sm text-red-600 leading-relaxed">"{rejectionReason}"</p>
+              </div>
+            </div>
+          )}
+
           {/* ── 기본 정보 ── */}
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-5 space-y-4">
             <h3 className="font-bold text-hwaseong-text text-sm flex items-center gap-2">
@@ -243,21 +309,110 @@ export default function ReportPage() {
               기본 정보
             </h3>
 
-            {/* 강의 날짜 */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                실제 강의 날짜 <span className="text-red-400">*</span>
-                <span className="ml-1.5 text-gray-400 font-normal">(오늘 날짜 자동 입력)</span>
-              </label>
-              <input
-                type="date"
-                value={lectureDate}
-                max={todayIso()}
-                onChange={(e) => setLectureDate(e.target.value)}
-                required
-                className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 bg-white"
-              />
-            </div>
+            {/* 강의 날짜 — 집중코스형: 다중 선택 / 그 외: 단일 날짜 */}
+            {isIntensive ? (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-gray-600">
+                    강의 날짜 선택 <span className="text-red-400">*</span>
+                    <span className="ml-1.5 text-gray-400 font-normal">해당하는 날짜를 모두 선택하세요</span>
+                  </label>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allDates = (match?.lecture_times ?? [])
+                          .map((s) => s.date).filter((d): d is string => !!d).sort();
+                        setSelectedDates(allDates);
+                      }}
+                      className="text-[10px] font-bold px-2 py-1 bg-hwaseong-blue/10 text-hwaseong-blue rounded-lg hover:bg-hwaseong-blue/20 transition-colors"
+                    >
+                      전체 선택
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDates([])}
+                      className="text-[10px] font-bold px-2 py-1 bg-gray-100 text-gray-500 rounded-lg hover:bg-gray-200 transition-colors"
+                    >
+                      전체 해제
+                    </button>
+                  </div>
+                </div>
+                {fetching ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-10 bg-gray-100 rounded-xl animate-pulse" />
+                    ))}
+                  </div>
+                ) : (match?.lecture_times ?? []).filter((s) => s.date).length === 0 ? (
+                  <p className="text-xs text-gray-400 py-2">등록된 강의 날짜가 없습니다. 직접 날짜를 입력해 주세요.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(match!.lecture_times ?? [])
+                      .filter((s) => s.date)
+                      .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""))
+                      .map((slot, idx) => {
+                        const date = slot.date!;
+                        const checked = selectedDates.includes(date);
+                        const timeStr = slot.start ?? slot.startTime ?? "";
+                        return (
+                          <label
+                            key={idx}
+                            className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 cursor-pointer transition-all ${
+                              checked
+                                ? "border-hwaseong-blue bg-blue-50"
+                                : "border-gray-200 bg-gray-50 hover:border-gray-300"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setSelectedDates((prev) =>
+                                  e.target.checked ? [...prev, date].sort() : prev.filter((d) => d !== date)
+                                );
+                              }}
+                              className="w-4 h-4 accent-hwaseong-blue flex-shrink-0"
+                            />
+                            <span className={`text-sm font-semibold flex-1 ${checked ? "text-hwaseong-blue" : "text-gray-600"}`}>
+                              {idx + 1}일차
+                              <span className="ml-2 font-normal text-xs text-gray-500">
+                                {new Date(date).toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" })}
+                                {timeStr && ` · ${timeStr}`}
+                              </span>
+                            </span>
+                            {checked && (
+                              <svg className="w-4 h-4 text-hwaseong-blue flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </label>
+                        );
+                      })}
+                  </div>
+                )}
+                <p className="text-[11px] text-gray-400 mt-1.5">
+                  {selectedDates.length > 0
+                    ? `${selectedDates.length}일 선택됨`
+                    : "날짜를 선택해 주세요."}
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  실제 강의 날짜 <span className="text-red-400">*</span>
+                  <span className="ml-1.5 text-gray-400 font-normal">(오늘 날짜 자동 입력)</span>
+                </label>
+                <input
+                  type="date"
+                  value={lectureDate}
+                  max={todayIso()}
+                  onChange={(e) => setLectureDate(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 bg-white"
+                />
+              </div>
+            )}
 
             {/* 교육 인원 */}
             <div>

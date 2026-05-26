@@ -11,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const [lpResult, profileResult] = await Promise.all([
     supabaseAdmin
       .from("leader_profiles")
-      .select("id, is_verified, is_active, specialties, available_regions, available_times, rating_avg, total_lectures, max_classes_month")
+      .select("id, is_verified, is_active, specialties, available_regions, available_times, rating_avg, total_lectures, max_classes_month, preferred_audiences, bio, phone")
       .eq("user_id", user.userId)
       .maybeSingle(),
     supabaseAdmin
@@ -43,7 +43,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ratingAvg: lp.rating_avg ?? 0,
           totalLectures: lp.total_lectures ?? 0,
           maxClassesMonth: lp.max_classes_month ?? 10,
-          preferredAudiences: [],
+          preferredAudiences: lp.preferred_audiences ?? [],
+          bio: lp.bio ?? "",
+          phone: lp.phone ?? "",
         }
       : null,
   });

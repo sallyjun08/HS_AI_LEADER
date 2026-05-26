@@ -61,7 +61,7 @@ export default function RegisterPage() {
 
   const [step, setStep] = useState<number>(1);
   const [role, setRole] = useState<Role | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", orgName: "", orgType: "", orgTypeCustom: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "", phone: "", orgName: "", orgType: "", orgTypeCustom: "" });
   const [emailStatus, setEmailStatus] = useState<"idle" | "checking" | "ok" | "taken">("idle");
   const [showPw, setShowPw] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -175,6 +175,7 @@ export default function RegisterPage() {
     if (emailStatus !== "ok") return setError("이메일 중복 확인을 해주세요.");
     if (form.password.length < 6) return setError("비밀번호는 6자 이상이어야 합니다.");
     if (form.password !== form.confirm) return setError("비밀번호가 일치하지 않습니다.");
+    if (role === "leader" && !form.phone.trim()) return setError("전화번호를 입력해 주세요.");
     if (role === "leader" && !certFile && !certImageUrl) return setError("AI 시민 리더 교육 인증서를 업로드해 주세요.");
     if (!consents.terms || !consents.privacy) return setError("필수 동의 항목에 모두 동의해 주세요.");
     setError(null);
@@ -200,6 +201,7 @@ export default function RegisterPage() {
           orgType: form.orgType === "기타" ? (form.orgTypeCustom.trim() || "기타") : (form.orgType || null),
         } : {}),
         ...(role === "leader" ? {
+          phone: form.phone.trim(),
           ...(uploadedCertUrl ? { certImageUrl: uploadedCertUrl } : {}),
           specialties: selectedSpecialties,
           availableRegions: selectedRegions,
@@ -544,6 +546,21 @@ export default function RegisterPage() {
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
                       />
                     </div>
+
+                    {role === "leader" && (
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                          전화번호 <span className="text-red-400">*</span>
+                          <span className="ml-1.5 text-gray-400 font-normal">(매칭 확정 시 수요처에 공개)</span>
+                        </label>
+                        <input
+                          type="tel" value={form.phone}
+                          onChange={(e) => update("phone", e.target.value)}
+                          placeholder="010-0000-0000" required
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 focus:border-hwaseong-blue transition-colors"
+                        />
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1.5">이메일</label>

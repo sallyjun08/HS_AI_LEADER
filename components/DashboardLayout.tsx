@@ -9,7 +9,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   leader: [
     { icon: "📊", label: "현황",       href: "/dashboard/leader" },
     { icon: "🔗", label: "매칭 요청",  href: "/dashboard/leader/matches" },
-    { icon: "📄", label: "활동 보고",  href: "/dashboard/leader/reports" },
+    { icon: "📚", label: "내 강의",    href: "/dashboard/leader/lectures" },
     { icon: "👤", label: "프로필",     href: "/dashboard/leader/profile" },
     { icon: "🏆", label: "포트폴리오", href: "/dashboard/leader/portfolio" },
     { icon: "⚙️", label: "내 정보",   href: "/dashboard/settings" },
@@ -24,7 +24,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { icon: "🔍", label: "요청 검토",      href: "/admin/review" },
     { icon: "🎯", label: "매칭 센터",      href: "/admin/matching-center" },
     { icon: "📋", label: "전체 요청 현황", href: "/admin/requests" },
-    { icon: "💰", label: "정산 관리",      href: "/admin/settlement" },
+    { icon: "💰", label: "보고서 및 정산", href: "/admin/settlement" },
     { icon: "🏢", label: "대여 설정",      href: "/admin/rental-settings" },
   ],
 };

@@ -3,85 +3,134 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import LectureCalendar from "@/components/LectureCalendar";
 
-type ScheduleMaterial = {
-  id: string;
-  title: string;
-  file_url: string;
-  file_type: string | null;
-  file_size_kb: number | null;
-  created_at: string;
-  uploader: { name: string; role: string } | null;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type LectureTimeSlot = {
+  date?: string;
+  day?: string;
+  startTime?: string;
+  start?: string;
+  endTime?: string;
+  end?: string;
 };
 
-type ScheduleMatch = {
-  id: string;
-  title: string;
-  category: string;
-  start_date: string;
-  end_date: string | null;
-  address: string | null;
-  notes: string | null;
-  participant_count: number;
-  target_age: string | null;
-  frequency: string;
-  location_type: string;
-  client_profile: { name: string; email: string; phone: string | null } | null;
-  materials: ScheduleMaterial[];
-};
+type LectureType = "oneday" | "intensive" | "longterm";
 
 type MatchRequest = {
   id: string;
   title: string;
   category: string;
-  target_age: string | null;
+  lecture_type: LectureType | null;
+  target_audience: string[] | null;
   participant_count: number;
+  session_count: number | null;
+  lecture_hours: number | null;
   start_date: string;
+  end_date: string | null;
+  lecture_times: LectureTimeSlot[] | null;
   address: string | null;
   notes: string | null;
-  frequency: string;
-  location_type: string;
   status: string;
+  matched_at: string | null;
   client: { name: string } | null;
 };
 
-const LOC_LABELS: Record<string, string> = { offline: "대면", online: "온라인", hybrid: "혼합" };
-const FREQ_LABELS: Record<string, string> = { single: "1회성", regular: "정기" };
+type FilterType = "all" | LectureType;
 
-function mapUrl(service: "kakao" | "naver", address: string): string {
-  const q = encodeURIComponent(address);
-  return service === "kakao"
-    ? `https://map.kakao.com/?q=${q}`
-    : `https://map.naver.com/v5/search/${q}`;
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const DAY_KR: Record<string, string> = {
+  mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
+};
+
+const REJECT_REASONS = [
+  "일정이 맞지 않아요",
+  "전문 분야가 맞지 않아요",
+  "이동 거리가 너무 멀어요",
+  "강의 규모·형태가 맞지 않아요",
+  "기타 (직접 입력)",
+];
+
+const FILTER_OPTIONS: { value: FilterType; label: string }[] = [
+  { value: "all",       label: "전체" },
+  { value: "oneday",    label: "원데이형" },
+  { value: "intensive", label: "집중코스형" },
+  { value: "longterm",  label: "장기정기형" },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDateKorean(dateStr: string): string {
+  if (!dateStr) return "";
+  const [y, m, d] = dateStr.split("-");
+  return `${y}년 ${Number(m)}월 ${Number(d)}일`;
 }
 
-function fileIcon(type: string | null): string {
-  if (type === "pdf") return "📕";
-  if (type === "pptx" || type === "ppt") return "📊";
-  if (type === "docx" || type === "doc") return "📝";
-  if (type === "image") return "🖼️";
-  return "📄";
+function addHoursToTime(time: string, hours: number): string {
+  if (!time) return "";
+  const [h, m] = time.split(":").map(Number);
+  const total = h * 60 + m + Math.round(hours * 60);
+  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
-function fmtFileSize(kb: number | null): string {
-  if (!kb) return "";
-  if (kb < 1024) return `${kb} KB`;
-  return `${(kb / 1024).toFixed(1)} MB`;
+function formatHours(h: number): string {
+  const w = Math.floor(h);
+  const mins = Math.round((h - w) * 60);
+  if (mins === 0) return `${w}시간`;
+  if (w === 0) return `${mins}분`;
+  return `${w}시간 ${mins}분`;
 }
+
+function formatSchedule(m: MatchRequest): string {
+  const slots = m.lecture_times ?? [];
+
+  if (m.lecture_type === "oneday") {
+    const datePart = formatDateKorean(m.start_date);
+    const first = slots[0];
+    const startTime = first?.startTime ?? first?.start ?? "";
+    const hours = m.lecture_hours ?? 2;
+    const endTime = first?.endTime ?? first?.end ?? (startTime ? addHoursToTime(startTime, hours) : "");
+    if (startTime && endTime) {
+      return `${datePart}  ${startTime} ~ ${endTime}  (총 ${formatHours(hours)})`;
+    }
+    return datePart;
+  }
+
+  // intensive / longterm
+  const startPart = formatDateKorean(m.start_date);
+  const endPart   = m.end_date ? formatDateKorean(m.end_date) : "";
+  const sessionCount = m.session_count ?? 1;
+
+  const uniqueDays = [...new Set(slots.map((s) => s.day).filter(Boolean))]
+    .map((d) => DAY_KR[d!] ?? d)
+    .join("·");
+  const firstTime = slots[0]?.startTime ?? slots[0]?.start ?? "";
+
+  const rangePart   = endPart ? `${startPart} ~ ${endPart}` : startPart;
+  const dayTimePart = uniqueDays
+    ? firstTime ? `매주 ${uniqueDays}요일 ${firstTime}` : `매주 ${uniqueDays}요일`
+    : "";
+
+  return [rangePart, dayTimePart, `총 ${sessionCount}회`].filter(Boolean).join("  |  ");
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function LeaderMatchesPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
 
-  const [matches, setMatches] = useState<MatchRequest[]>([]);
-  const [scheduleMatches, setScheduleMatches] = useState<ScheduleMatch[]>([]);
-  const [submittedIds, setSubmittedIds] = useState<Set<string>>(new Set());
-  const [expandedSchedule, setExpandedSchedule] = useState<string | null>(null);
+  const [matches, setMatches]               = useState<MatchRequest[]>([]);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
-  const [rejectModal, setRejectModal] = useState<{ matchId: string; title: string } | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [rejectModal, setRejectModal]       = useState<{ matchId: string; title: string } | null>(null);
+  const [rejectPreset, setRejectPreset]     = useState("");
+  const [rejectCustom, setRejectCustom]     = useState("");
+  const [rejectingId, setRejectingId]       = useState<string | null>(null);
+  const [toast, setToast]                   = useState<{ msg: string; ok: boolean } | null>(null);
+  const [filter, setFilter]                 = useState<FilterType>("all");
+  const [expandedCalendar, setExpandedCalendar] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "leader")) router.replace("/login");
@@ -94,14 +143,8 @@ export default function LeaderMatchesPage() {
   }, [toast]);
 
   async function fetchAll() {
-    const [m, r, s] = await Promise.all([
-      fetch("/api/match-requests").then((r) => r.json()),
-      fetch("/api/activity-reports").then((r) => r.json()),
-      fetch("/api/schedule").then((r) => r.json()).catch(() => []),
-    ]);
+    const m = await fetch("/api/match-requests").then((r) => r.json());
     if (Array.isArray(m)) setMatches(m);
-    if (Array.isArray(r)) setSubmittedIds(new Set((r as { match_id: string }[]).map((x) => x.match_id)));
-    if (Array.isArray(s)) setScheduleMatches(s);
   }
 
   useEffect(() => {
@@ -116,7 +159,8 @@ export default function LeaderMatchesPage() {
     setActionInProgress(null);
   }
 
-  async function rejectMatch(matchId: string, reason: string) {
+  async function rejectMatch(matchId: string) {
+    const reason = rejectPreset === "기타 (직접 입력)" ? rejectCustom : rejectPreset;
     setRejectingId(matchId);
     const res = await fetch(`/api/match-requests/${matchId}/reject`, {
       method: "POST",
@@ -131,21 +175,70 @@ export default function LeaderMatchesPage() {
     }
     setRejectingId(null);
     setRejectModal(null);
-    setRejectReason("");
+    setRejectPreset("");
+    setRejectCustom("");
   }
 
-  const pendingMatches   = useMemo(() => matches.filter((m) => m.status === "matched"), [matches]);
-  const ongoingMatches   = useMemo(() => matches.filter((m) => m.status === "ongoing"), [matches]);
-  const completedMatches = useMemo(() => matches.filter((m) => m.status === "completed"), [matches]);
+  function openRejectModal(m: MatchRequest) {
+    setRejectModal({ matchId: m.id, title: m.title });
+    setRejectPreset("");
+    setRejectCustom("");
+  }
+
+  const filteredMatches = useMemo(
+    () => filter === "all" ? matches : matches.filter((m) => m.lecture_type === filter),
+    [matches, filter],
+  );
+
+  const pendingMatches = useMemo(() => filteredMatches.filter((m) => m.status === "matched"), [filteredMatches]);
 
   if (loading || !user) {
-    return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
+
+  const rejectConfirmDisabled =
+    rejectingId !== null ||
+    !rejectPreset ||
+    (rejectPreset === "기타 (직접 입력)" && !rejectCustom.trim());
 
   return (
     <>
       <Head><title>매칭 요청 | 화성 AI 시민리더 잇다</title></Head>
       <DashboardLayout pageTitle="매칭 요청">
+
+        {/* 강의 유형 필터 */}
+        <div className="flex gap-2 flex-wrap">
+          {FILTER_OPTIONS.map((opt) => {
+            const count = opt.value === "all"
+              ? matches.filter((m) => m.status === "matched").length
+              : matches.filter((m) => m.lecture_type === opt.value && m.status === "matched").length;
+            const active = filter === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => setFilter(opt.value)}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
+                  active
+                    ? "bg-hwaseong-blue text-white border-hwaseong-blue shadow-sm"
+                    : "bg-white text-gray-500 border-gray-200 hover:border-hwaseong-blue/40 hover:text-hwaseong-blue"
+                }`}
+              >
+                {opt.label}
+                {count > 0 && (
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                    active ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
         {/* 신규 배정 알림 배너 */}
         {pendingMatches.length > 0 && (
@@ -165,197 +258,55 @@ export default function LeaderMatchesPage() {
 
         {/* 수락 대기 */}
         {pendingMatches.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-amber-700">🔔 수락 대기</span>
-              <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded-full">{pendingMatches.length}</span>
-            </div>
-            {pendingMatches.map((m) => (
-              <MatchCard
-                key={m.id}
-                match={m}
-                actionInProgress={actionInProgress}
-                onAccept={() => acceptMatch(m.id)}
-                onReject={() => { setRejectModal({ matchId: m.id, title: m.title }); setRejectReason(""); }}
-                showActions
-              />
-            ))}
-          </div>
-        )}
-
-        {/* 진행 중 */}
-        {ongoingMatches.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-green-700">▶️ 진행 중</span>
-              <span className="text-[10px] bg-green-100 text-green-700 font-bold px-1.5 py-0.5 rounded-full">{ongoingMatches.length}</span>
-            </div>
-            {ongoingMatches.map((m) => {
-              const detail = scheduleMatches.find((s) => s.id === m.id);
-              const expanded = expandedSchedule === m.id;
+          <section className="space-y-3">
+            <SectionHeader label="수락 대기" icon="🔔" colorKey="amber" count={pendingMatches.length} />
+            {pendingMatches.map((m) => {
+              const calOpen = expandedCalendar === m.id;
               return (
-                <div key={m.id}>
-                  <MatchCard
-                    match={m}
-                    actionInProgress={actionInProgress}
-                    onAccept={() => acceptMatch(m.id)}
-                    onReject={() => { setRejectModal({ matchId: m.id, title: m.title }); setRejectReason(""); }}
-                    extra={
-                      <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-gray-50 gap-2">
-                        {detail ? (
-                          <button
-                            onClick={() => setExpandedSchedule(expanded ? null : m.id)}
-                            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-colors ${
-                              expanded
-                                ? "bg-hwaseong-blue/5 border-hwaseong-blue/30 text-hwaseong-blue"
-                                : "bg-gray-50 border-gray-200 text-gray-500 hover:border-hwaseong-blue/30 hover:text-hwaseong-blue"
-                            }`}
-                          >
-                            {expanded ? "▲ 일정 접기" : "📅 일정 상세 보기"}
-                          </button>
-                        ) : (
-                          <span className="text-xs text-green-600 bg-green-50 py-1.5 px-3 rounded-xl">✅ 수락 완료</span>
-                        )}
-                        {!submittedIds.has(m.id) && (
-                          <button
-                            onClick={() => router.push(`/dashboard/leader/report?matchId=${m.id}`)}
-                            className="text-[11px] font-bold px-3 py-1.5 bg-hwaseong-blue text-white rounded-xl hover:bg-blue-900 transition-colors"
-                          >
-                            보고서 제출 →
-                          </button>
-                        )}
-                        {submittedIds.has(m.id) && (
-                          <span className="text-[11px] text-green-600 font-semibold bg-green-50 px-3 py-1.5 rounded-xl">✅ 보고서 제출 완료</span>
-                        )}
-                      </div>
-                    }
-                  />
-
-                  {expanded && detail && (
-                    <div className="bg-gray-50 border border-gray-100 border-t-0 rounded-b-2xl p-4 space-y-3 -mt-1">
-                      {detail.address ? (
-                        <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-gray-100">
-                          <span className="text-base flex-shrink-0">📍</span>
-                          <p className="text-sm text-gray-700 flex-1 font-medium">{detail.address}</p>
-                          <div className="flex gap-1.5 flex-shrink-0">
-                            <a href={mapUrl("kakao", detail.address)} target="_blank" rel="noopener noreferrer"
-                              className="text-[11px] font-bold px-2.5 py-1.5 bg-yellow-400 text-yellow-900 rounded-lg hover:bg-yellow-500 transition-colors">
-                              카카오
-                            </a>
-                            <a href={mapUrl("naver", detail.address)} target="_blank" rel="noopener noreferrer"
-                              className="text-[11px] font-bold px-2.5 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
-                              네이버
-                            </a>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-400 bg-white rounded-xl px-4 py-3 border border-gray-100">📍 장소 미정</p>
-                      )}
-
-                      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                        <div className="bg-gray-50 px-4 py-2 flex items-center gap-2 border-b border-gray-100">
-                          <span className="text-sm">🏢</span>
-                          <p className="text-xs font-bold text-gray-600">수요처 담당자</p>
-                          <span className="ml-auto text-[10px] text-green-600 font-semibold bg-green-50 px-2 py-0.5 rounded-full">연락처 공개됨</span>
-                        </div>
-                        <div className="px-4 py-3 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-semibold text-hwaseong-text text-sm">{detail.client_profile?.name ?? "—"}</p>
-                            {detail.client_profile?.email && (
-                              <p className="text-xs text-gray-400 mt-0.5 truncate">{detail.client_profile.email}</p>
-                            )}
-                          </div>
-                          {detail.client_profile?.phone ? (
-                            <a
-                              href={`tel:${detail.client_profile.phone.replace(/[^0-9+]/g, "")}`}
-                              className="flex items-center gap-1.5 px-4 py-2 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 transition-colors flex-shrink-0"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
-                              </svg>
-                              {detail.client_profile.phone}
-                            </a>
-                          ) : (
-                            <span className="text-xs text-gray-400 bg-gray-50 px-3 py-2 rounded-xl">연락처 미등록</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {detail.materials.length > 0 && (
-                        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-                          <div className="bg-gray-50 px-4 py-2 flex items-center gap-2 border-b border-gray-100">
-                            <span className="text-sm">📂</span>
-                            <p className="text-xs font-bold text-gray-600">강의 자료실</p>
-                            <span className="ml-auto text-[10px] text-gray-400">{detail.materials.length}개</span>
-                          </div>
-                          <div className="divide-y divide-gray-50">
-                            {detail.materials.map((mat) => (
-                              <div key={mat.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50/60 transition-colors">
-                                <span className="text-xl flex-shrink-0">{fileIcon(mat.file_type)}</span>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-semibold text-hwaseong-text truncate">{mat.title}</p>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    {mat.uploader && (
-                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${mat.uploader.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
-                                        {mat.uploader.role === "admin" ? "운영자" : "수요처"}
-                                      </span>
-                                    )}
-                                    {mat.file_size_kb && <span className="text-[10px] text-gray-400">{fmtFileSize(mat.file_size_kb)}</span>}
-                                  </div>
-                                </div>
-                                <a href={mat.file_url} target="_blank" rel="noopener noreferrer" download
-                                  className="flex-shrink-0 text-[11px] font-bold px-3 py-1.5 bg-hwaseong-blue/10 text-hwaseong-blue rounded-xl hover:bg-hwaseong-blue hover:text-white transition-colors">
-                                  ↓ 다운로드
-                                </a>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {detail.notes && (
-                        <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-                          <p className="text-[10px] font-bold text-amber-600 mb-1">📝 수요처 요청사항</p>
-                          <p className="text-xs text-amber-800 leading-relaxed">{detail.notes}</p>
+                <MatchCard
+                  key={m.id}
+                  match={m}
+                  actionInProgress={actionInProgress}
+                  onAccept={() => acceptMatch(m.id)}
+                  onReject={() => openRejectModal(m)}
+                  showAcceptReject
+                  extra={
+                    <div className="mt-3 pt-2.5 border-t border-gray-100">
+                      <button
+                        onClick={() => setExpandedCalendar(calOpen ? null : m.id)}
+                        className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-colors border ${
+                          calOpen
+                            ? "bg-amber-50 border-amber-200 text-amber-700"
+                            : "bg-gray-50 border-gray-200 text-gray-500 hover:border-amber-200 hover:text-amber-700 hover:bg-amber-50"
+                        }`}
+                      >
+                        <span>📅</span>
+                        {calOpen ? "일정 미리보기 닫기" : "수락 시 내 일정 확인하기"}
+                        <span className="text-[10px]">{calOpen ? "▲" : "▼"}</span>
+                      </button>
+                      {calOpen && (
+                        <div className="mt-3">
+                          <LectureCalendar matches={matches.filter((x) => x.status === "ongoing")} previewMatch={m} />
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
+                  }
+                />
               );
             })}
-          </div>
+          </section>
         )}
 
-        {/* 완료됨 */}
-        {completedMatches.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-gray-500">✅ 완료됨</span>
-              <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-1.5 py-0.5 rounded-full">{completedMatches.length}</span>
-            </div>
-            {completedMatches.map((m) => (
-              <MatchCard
-                key={m.id}
-                match={m}
-                actionInProgress={actionInProgress}
-                onAccept={() => acceptMatch(m.id)}
-                onReject={() => { setRejectModal({ matchId: m.id, title: m.title }); setRejectReason(""); }}
-                muted
-              />
-            ))}
-          </div>
-        )}
-
-        {matches.length === 0 && (
+        {filteredMatches.filter((m) => m.status === "matched").length === 0 && (
           <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 text-gray-400">
             <p className="text-4xl mb-3">📭</p>
-            <p className="text-sm">아직 배정된 매칭 요청이 없습니다.</p>
+            <p className="text-sm">수락 대기 중인 매칭 요청이 없습니다.</p>
           </div>
         )}
 
       </DashboardLayout>
 
+      {/* Toast */}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white text-sm font-semibold max-w-sm ${
           toast.ok ? "bg-green-600" : "bg-red-500"
@@ -366,6 +317,7 @@ export default function LeaderMatchesPage() {
         </div>
       )}
 
+      {/* 거절 사유 선택 모달 */}
       {rejectModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
@@ -374,23 +326,55 @@ export default function LeaderMatchesPage() {
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md">
             <div className="px-6 pt-6 pb-4 border-b border-gray-100">
               <p className="text-xs font-semibold text-red-500 mb-1.5">매칭 거절</p>
-              <h3 className="font-bold text-hwaseong-text text-sm leading-snug line-clamp-2">{rejectModal.title}</h3>
+              <h3 className="font-bold text-hwaseong-text text-sm leading-snug line-clamp-2">
+                {rejectModal.title}
+              </h3>
             </div>
             <div className="px-6 py-4 space-y-3">
-              <p className="text-sm text-gray-500">거절 처리 후 관리자가 다른 강사로 재배정합니다.</p>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                  거절 사유 <span className="font-normal text-gray-400">(선택)</span>
-                </label>
+              <p className="text-xs text-gray-500">거절 처리 후 관리자가 다른 강사로 재배정합니다.</p>
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-gray-600 mb-1">거절 사유를 선택해 주세요</p>
+                {REJECT_REASONS.map((reason) => {
+                  const selected = rejectPreset === reason;
+                  return (
+                    <label
+                      key={reason}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors ${
+                        selected
+                          ? "border-red-300 bg-red-50"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                        selected ? "border-red-500" : "border-gray-300"
+                      }`}>
+                        {selected && <div className="w-2 h-2 rounded-full bg-red-500" />}
+                      </div>
+                      <input
+                        type="radio"
+                        name="rejectReason"
+                        value={reason}
+                        checked={selected}
+                        onChange={() => setRejectPreset(reason)}
+                        className="sr-only"
+                      />
+                      <span className={`text-xs font-medium ${selected ? "text-red-700" : "text-gray-600"}`}>
+                        {reason}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {rejectPreset === "기타 (직접 입력)" && (
                 <textarea
                   rows={3}
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="일정 충돌, 전문 분야 불일치 등 사유를 입력해 주세요."
+                  value={rejectCustom}
+                  onChange={(e) => setRejectCustom(e.target.value)}
+                  placeholder="거절 사유를 직접 입력해 주세요."
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-200 resize-none"
                   autoFocus
                 />
-              </div>
+              )}
             </div>
             <div className="px-6 pb-6 flex gap-2">
               <button
@@ -401,13 +385,16 @@ export default function LeaderMatchesPage() {
                 취소
               </button>
               <button
-                onClick={() => rejectMatch(rejectModal.matchId, rejectReason)}
-                disabled={rejectingId !== null}
+                onClick={() => rejectMatch(rejectModal.matchId)}
+                disabled={rejectConfirmDisabled}
                 className="flex-1 py-3 bg-red-500 text-white text-sm font-bold rounded-xl hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {rejectingId
-                  ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />처리 중...</>
-                  : "거절 확인"}
+                {rejectingId ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    처리 중...
+                  </>
+                ) : "거절 확인"}
               </button>
             </div>
           </div>
@@ -417,12 +404,50 @@ export default function LeaderMatchesPage() {
   );
 }
 
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionHeader({
+  label, icon, colorKey, count,
+}: {
+  label: string;
+  icon: string;
+  colorKey: "amber" | "green" | "gray";
+  count: number;
+}) {
+  const c = {
+    amber: { text: "text-amber-700", badge: "bg-amber-100 text-amber-700" },
+    green: { text: "text-green-700", badge: "bg-green-100 text-green-700" },
+    gray:  { text: "text-gray-500",  badge: "bg-gray-100 text-gray-500"   },
+  }[colorKey];
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`text-sm font-bold ${c.text}`}>{icon} {label}</span>
+      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${c.badge}`}>{count}</span>
+    </div>
+  );
+}
+
+function LectureTypeBadge({ type }: { type: LectureType | null }) {
+  if (!type) return null;
+  const map: Record<LectureType, { label: string; cls: string }> = {
+    oneday:    { label: "원데이형",   cls: "bg-blue-100 text-blue-700" },
+    intensive: { label: "집중코스형", cls: "bg-yellow-100 text-yellow-700" },
+    longterm:  { label: "장기정기형", cls: "bg-green-100 text-green-700" },
+  };
+  const s = map[type];
+  return (
+    <span className={`inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${s.cls}`}>
+      {s.label}
+    </span>
+  );
+}
+
 function MatchCard({
   match: m,
   actionInProgress,
   onAccept,
   onReject,
-  showActions = false,
+  showAcceptReject = false,
   muted = false,
   extra,
 }: {
@@ -430,59 +455,163 @@ function MatchCard({
   actionInProgress: string | null;
   onAccept: () => void;
   onReject: () => void;
-  showActions?: boolean;
+  showAcceptReject?: boolean;
   muted?: boolean;
   extra?: React.ReactNode;
 }) {
-  const busy = actionInProgress === m.id;
+  const busy     = actionInProgress === m.id;
+  const schedule = formatSchedule(m);
+
+  const typeBarColor =
+    m.lecture_type === "oneday"    ? "bg-blue-400" :
+    m.lecture_type === "intensive" ? "bg-yellow-400" :
+    m.lecture_type === "longterm"  ? "bg-green-400" : "bg-gray-200";
+
+  const scheduleBg =
+    m.lecture_type === "oneday"    ? "bg-blue-50" :
+    m.lecture_type === "intensive" ? "bg-yellow-50" :
+    m.lecture_type === "longterm"  ? "bg-green-50" : "bg-gray-50";
+
   return (
-    <div className={`rounded-2xl p-4 shadow-sm border ${muted ? "bg-gray-50 border-gray-100 opacity-70" : "bg-white border-gray-100"}`}>
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="min-w-0">
-          <p className="font-semibold text-hwaseong-text text-sm truncate">{m.title}</p>
-          <p className="text-xs text-gray-500 mt-0.5 truncate">{m.client?.name}</p>
+    <div className={`rounded-2xl overflow-hidden shadow-sm border ${muted ? "bg-gray-50 border-gray-100 opacity-70" : "bg-white border-gray-100"}`}>
+      {/* 강의 유형 컬러 바 */}
+      {m.lecture_type && <div className={`h-1 w-full ${typeBarColor}`} />}
+
+      <div className="p-4">
+        {/* 헤더 */}
+        <div className="mb-2.5">
+          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+            <LectureTypeBadge type={m.lecture_type} />
+            <StatusBadge status={m.status} />
+          </div>
+          <p className="font-bold text-hwaseong-text text-sm leading-snug">{m.title}</p>
+          <p className="text-xs text-gray-400 mt-0.5 truncate">{m.client?.name}</p>
         </div>
-        <StatusBadge status={m.status} />
-      </div>
-      <div className="flex flex-wrap gap-1.5 mb-2">
-        {[
-          m.category && `🎯 ${m.category}`,
-          m.address && `📍 ${m.address}`,
-          `📅 ${m.start_date}`,
-          `👥 ${m.participant_count}명${m.target_age ? ` (${m.target_age})` : ""}`,
-          m.frequency && FREQ_LABELS[m.frequency] && `🔄 ${FREQ_LABELS[m.frequency]}`,
-          m.location_type && LOC_LABELS[m.location_type] && `📡 ${LOC_LABELS[m.location_type]}`,
-        ].filter(Boolean).map((tag) => (
-          <span key={String(tag)} className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">{tag}</span>
-        ))}
-      </div>
-      {m.notes && <p className="text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2 mb-2 line-clamp-2">📝 {m.notes}</p>}
-      {showActions && (
-        <div className="flex gap-2">
-          <button onClick={onAccept} disabled={busy}
-            className="flex-1 py-2.5 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-50">
-            {busy ? "처리 중..." : "✅ 수락"}
-          </button>
-          <button onClick={onReject} disabled={busy}
-            className="flex-1 py-2.5 bg-white border-2 border-red-300 text-red-500 text-xs font-bold rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50">
-            {busy ? "..." : "✕ 거절"}
-          </button>
+
+        {/* 일정 표시 */}
+        {schedule && (
+          <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl mb-3 ${scheduleBg}`}>
+            <span className="text-xs mt-0.5 flex-shrink-0">📅</span>
+            <p className="text-xs font-semibold text-gray-700 leading-relaxed break-keep">{schedule}</p>
+          </div>
+        )}
+
+        {/* 정보 태그 */}
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {[
+            m.category                                              && `🎯 ${m.category}`,
+            m.address                                              && `📍 ${m.address}`,
+            `👥 ${m.participant_count}명`,
+            m.session_count && m.session_count > 1                 && `🔄 총 ${m.session_count}회`,
+            ...(m.target_audience ?? []).slice(0, 2).map((t) => `👤 ${t}`),
+          ].filter(Boolean).map((tag) => (
+            <span key={String(tag)} className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-lg">{tag}</span>
+          ))}
         </div>
-      )}
-      {extra}
+
+        {m.notes && (
+          <p className="text-xs text-gray-500 bg-gray-50 rounded-xl px-3 py-2 mb-2 line-clamp-2">
+            📝 {m.notes}
+          </p>
+        )}
+
+        {/* 데드라인 카운트다운 */}
+        {showAcceptReject && m.matched_at && (
+          <div className="mb-2">
+            <DeadlineCountdown matchedAt={m.matched_at} />
+          </div>
+        )}
+
+        {/* 수락 / 거절 버튼 */}
+        {showAcceptReject && (
+          <div className="flex gap-2 mt-1">
+            <button
+              onClick={onAccept}
+              disabled={busy}
+              className="flex-1 py-2.5 bg-hwaseong-blue text-white text-xs font-bold rounded-xl hover:bg-blue-900 transition-colors disabled:opacity-50"
+            >
+              {busy ? "처리 중..." : "✅ 수락"}
+            </button>
+            <button
+              onClick={onReject}
+              disabled={busy}
+              className="flex-1 py-2.5 bg-white border-2 border-red-300 text-red-500 text-xs font-bold rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {busy ? "..." : "✕ 거절"}
+            </button>
+          </div>
+        )}
+
+        {extra}
+      </div>
+    </div>
+  );
+}
+
+function DeadlineCountdown({ matchedAt }: { matchedAt: string }) {
+  const deadline = new Date(new Date(matchedAt).getTime() + 24 * 60 * 60 * 1000);
+
+  const [remaining, setRemaining] = useState(() => deadline.getTime() - Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setRemaining(deadline.getTime() - Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [deadline.getTime()]);
+
+  if (remaining <= 0) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
+        <span className="text-xs">⛔</span>
+        <span className="text-xs font-bold text-red-600">마감 시간 초과 — 자동 거절 처리 예정</span>
+      </div>
+    );
+  }
+
+  const totalSecs = Math.floor(remaining / 1000);
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  const isUrgent  = remaining < 60 * 60 * 1000;       // < 1시간
+  const isWarning = remaining < 6 * 60 * 60 * 1000;   // < 6시간
+
+  const colors = isUrgent
+    ? { bg: "bg-red-50 border-red-200",   text: "text-red-600",   label: "text-red-500",   icon: "🚨" }
+    : isWarning
+    ? { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", label: "text-amber-500", icon: "⚠️" }
+    : { bg: "bg-blue-50 border-blue-100",  text: "text-blue-700",  label: "text-blue-400",  icon: "⏱️" };
+
+  return (
+    <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border ${colors.bg}`}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs">{colors.icon}</span>
+        <span className={`text-[11px] font-semibold ${colors.label}`}>수락 마감</span>
+        <span className={`text-[10px] ${colors.label}`}>
+          {deadline.toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}{" "}
+          {deadline.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+        </span>
+      </div>
+      <span className={`text-sm font-black tabular-nums ${colors.text} ${isUrgent ? "animate-pulse" : ""}`}>
+        {h > 0 ? `${pad(h)}:` : ""}{pad(m)}:{pad(s)}
+      </span>
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    pending:   { label: "대기 중",  cls: "bg-amber-100 text-amber-700" },
+    pending:   { label: "대기 중",   cls: "bg-amber-100 text-amber-700" },
     matched:   { label: "수락 대기", cls: "bg-blue-100 text-blue-700" },
-    ongoing:   { label: "진행 중",  cls: "bg-green-100 text-green-700" },
-    completed: { label: "완료",     cls: "bg-gray-100 text-gray-600" },
-    cancelled: { label: "취소",     cls: "bg-red-50 text-red-500" },
-    rejected:  { label: "거절됨",   cls: "bg-orange-100 text-orange-700" },
+    ongoing:   { label: "진행 중",   cls: "bg-green-100 text-green-700" },
+    completed: { label: "완료",      cls: "bg-gray-100 text-gray-600" },
+    cancelled: { label: "취소",      cls: "bg-red-50 text-red-500" },
+    rejected:  { label: "거절됨",    cls: "bg-orange-100 text-orange-700" },
   };
   const s = map[status] ?? { label: status, cls: "bg-gray-100 text-gray-500" };
-  return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${s.cls}`}>{s.label}</span>;
+  return (
+    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${s.cls}`}>
+      {s.label}
+    </span>
+  );
 }

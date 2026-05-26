@@ -30,9 +30,13 @@ type MatchRequest = {
   id: string;
   title: string;
   category: string;
+  lecture_type: "oneday" | "intensive" | "longterm" | null;
+  session_count: number | null;
+  lecture_hours: number | null;
   target_age: string | null;
   participant_count: number;
   start_date: string;
+  end_date: string | null;
   address: string | null;
   status: string;
   is_approved?: boolean;
@@ -51,6 +55,7 @@ type FeedLeader = {
 
 type Report = {
   id: string;
+  match_id: string;
   lecture_date: string;
   attendance_count: number;
   report_text: string | null;
@@ -71,6 +76,7 @@ export default function AdminDashboard() {
   const [seedResult, setSeedResult] = useState<{ accounts?: { leaders: { name: string; email: string; password: string }[]; client: { name: string; email: string; password: string } } } | null>(null);
   const [testClientBusy, setTestClientBusy] = useState(false);
   const [testClientResult, setTestClientResult] = useState<{ email: string; password: string } | null>(null);
+  const [showOngoingModal, setShowOngoingModal] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
@@ -150,10 +156,17 @@ export default function AdminDashboard() {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  const pendingRequests   = requests.filter((r) => r.status === "pending");
-  const matchedRequests   = requests.filter((r) => r.status === "matched");
-  const rejectedRequests  = requests.filter((r) => r.status === "rejected");
-  const ongoingCount      = requests.filter((r) => r.status === "ongoing").length;
+  const pendingRequests        = requests.filter((r) => r.status === "pending");
+  const reviewRequests         = requests.filter((r) => r.status === "pending" && r.is_approved === false);
+  const matchingQueueRequests  = requests.filter((r) => r.status === "pending" && r.is_approved === true);
+  const matchedRequests        = requests.filter((r) => r.status === "matched");
+  const rejectedRequests       = requests.filter((r) => r.status === "rejected");
+  const ongoingRequests        = requests.filter((r) => r.status === "ongoing");
+  const ongoingCount           = ongoingRequests.length;
+  const submittedCountByMatch = reports.reduce<Record<string, number>>((acc, r) => {
+    if (r.match_id) acc[r.match_id] = (acc[r.match_id] ?? 0) + 1;
+    return acc;
+  }, {});
   const unverifiedLeaders = feedLeaders.filter((l) => !l.isVerified);
   const todayReports = reports.filter((r) => {
     const today = new Date().toDateString();
@@ -273,71 +286,59 @@ export default function AdminDashboard() {
         {/* 통계 */}
         {stats && (
           <>
-            {/* ── 상단 요약 카드 4개 ── */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* ── 상단 요약 카드 5개 ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
 
-              {/* 매칭 대기 중 */}
-              <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-lg">📥</div>
-                  {pendingRequests.length > 0
-                    ? <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg animate-pulse">처리 필요</span>
-                    : <span className="text-xs font-semibold text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">없음</span>
-                  }
-                </div>
-                <p className="text-3xl font-black text-hwaseong-text">{pendingRequests.length}</p>
-                <p className="text-sm font-semibold text-gray-600 mt-1">매칭 대기 중</p>
-                <p className="text-xs text-gray-400 mt-0.5">강사 배정이 필요한 요청</p>
-              </div>
+              {/* 요청 검토 — 액션 카드 (조건부 스타일) */}
+              <StatActionCard
+                icon="🔍"
+                label="요청 검토"
+                sub="수요처 신규 요청"
+                count={reviewRequests.length}
+                alertLabel="검토 필요"
+                colorClass={{ bg: "bg-violet-50", border: "border-violet-200", iconBg: "bg-violet-200", text: "text-violet-700", badgeBg: "bg-violet-100", sub: "text-violet-500" }}
+              />
 
-              {/* 진행 중인 강의 */}
-              <div className="bg-white rounded-2xl p-5 border border-green-100 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-lg">▶️</div>
-                  <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-1 rounded-lg">진행</span>
-                </div>
-                <p className="text-3xl font-black text-hwaseong-text">{ongoingCount}</p>
-                <p className="text-sm font-semibold text-gray-600 mt-1">진행 중인 강의</p>
-                <p className="text-xs text-gray-400 mt-0.5">현재 수업이 열린 건수</p>
-              </div>
+              {/* 매칭 대기 중 — 액션 카드 (승인 완료 후 강사 미배정) */}
+              <StatActionCard
+                icon="📥"
+                label="매칭 대기 중"
+                sub="강사 배정 대기"
+                count={matchingQueueRequests.length}
+                alertLabel="배정 필요"
+                colorClass={{ bg: "bg-amber-50", border: "border-amber-200", iconBg: "bg-amber-200", text: "text-amber-700", badgeBg: "bg-amber-100", sub: "text-amber-500" }}
+              />
 
-              {/* 오늘 제출된 보고서 */}
-              <div className="bg-white rounded-2xl p-5 border border-sky-100 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="w-10 h-10 bg-sky-100 rounded-xl flex items-center justify-center text-lg">📄</div>
-                  <span className="text-xs font-semibold text-sky-700 bg-sky-50 px-2 py-1 rounded-lg">오늘</span>
-                </div>
-                <p className="text-3xl font-black text-hwaseong-text">{todayReports}</p>
-                <p className="text-sm font-semibold text-gray-600 mt-1">오늘 제출된 보고서</p>
-                <p className="text-xs text-gray-400 mt-0.5">금일 활동 보고 건수</p>
-              </div>
+              {/* 진행 중인 강의 — 정보 카드 (클릭 시 모달) */}
+              <StatInfoCard
+                icon="▶️"
+                label="진행 중인 강의"
+                sub="현재 수업 중인 건수"
+                value={ongoingCount}
+                badge="진행"
+                colorClass={{ border: "border-green-100", iconBg: "bg-green-100", badgeText: "text-green-700", badgeBg: "bg-green-50" }}
+                onClick={ongoingCount > 0 ? () => setShowOngoingModal(true) : undefined}
+              />
 
-              {/* 재배정 필요 — 빨간색 경고 */}
-              <div className={`rounded-2xl p-5 border shadow-sm relative overflow-hidden ${
-                rejectedRequests.length > 0 ? "bg-red-50 border-red-200" : "bg-white border-gray-100"
-              }`}>
-                {rejectedRequests.length > 0 && (
-                  <div className="absolute inset-0 bg-red-400/5 animate-pulse pointer-events-none" />
-                )}
-                <div className="flex items-center justify-between mb-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
-                    rejectedRequests.length > 0 ? "bg-red-200" : "bg-gray-100"
-                  }`}>⚠️</div>
-                  {rejectedRequests.length > 0
-                    ? <span className="text-xs font-bold text-red-700 bg-red-100 px-2 py-1 rounded-lg animate-pulse">즉시 처리</span>
-                    : <span className="text-xs font-semibold text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">정상</span>
-                  }
-                </div>
-                <p className={`text-3xl font-black ${rejectedRequests.length > 0 ? "text-red-600" : "text-hwaseong-text"}`}>
-                  {rejectedRequests.length}
-                </p>
-                <p className={`text-sm font-semibold mt-1 ${rejectedRequests.length > 0 ? "text-red-700" : "text-gray-600"}`}>
-                  재배정 필요
-                </p>
-                <p className={`text-xs mt-0.5 ${rejectedRequests.length > 0 ? "text-red-500 font-semibold" : "text-gray-400"}`}>
-                  {rejectedRequests.length > 0 ? `강사 거절 → 재배정 필요` : "모든 매칭 정상"}
-                </p>
-              </div>
+              {/* 오늘 제출된 보고서 — 정보 카드 (고정 스타일) */}
+              <StatInfoCard
+                icon="📄"
+                label="오늘 제출된 보고서"
+                sub="금일 활동 보고 건수"
+                value={todayReports}
+                badge="오늘"
+                colorClass={{ border: "border-sky-100", iconBg: "bg-sky-100", badgeText: "text-sky-700", badgeBg: "bg-sky-50" }}
+              />
+
+              {/* 재배정 필요 — 액션 카드 (조건부 스타일) */}
+              <StatActionCard
+                icon="⚠️"
+                label="재배정 필요"
+                sub={rejectedRequests.length > 0 ? "강사 거절 → 재배정 필요" : "모든 매칭 정상"}
+                count={rejectedRequests.length}
+                alertLabel="즉시 처리"
+                colorClass={{ bg: "bg-red-50", border: "border-red-200", iconBg: "bg-red-200", text: "text-red-700", badgeBg: "bg-red-100", sub: "text-red-500" }}
+              />
             </div>
 
             {/* ── 차트 + 현황 카드 ── */}
@@ -570,7 +571,164 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* 진행 중인 강의 모달 */}
+      {showOngoingModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowOngoingModal(false); }}
+        >
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            {/* 헤더 */}
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-hwaseong-text">진행 중인 강의</h3>
+                <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                  {ongoingRequests.length}건
+                </span>
+              </div>
+              <button
+                onClick={() => setShowOngoingModal(false)}
+                className="w-8 h-8 rounded-xl bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 목록 */}
+            <div className="overflow-y-auto divide-y divide-gray-50 flex-1">
+              {ongoingRequests.map((r) => {
+                const leaderName = (r.leader as { profiles?: { name?: string } } | null)?.profiles?.name ?? "—";
+                const submitted  = submittedCountByMatch[r.id] ?? 0;
+                const total      = r.session_count ?? 1;
+                const isMulti    = r.lecture_type === "longterm" || r.lecture_type === "intensive";
+                const pct        = isMulti ? Math.min(100, Math.round((submitted / total) * 100)) : null;
+
+                const typeLabel =
+                  r.lecture_type === "longterm"  ? { label: "장기정기형", cls: "bg-green-100 text-green-700" } :
+                  r.lecture_type === "intensive" ? { label: "집중코스형", cls: "bg-yellow-100 text-yellow-700" } :
+                  r.lecture_type === "oneday"    ? { label: "원데이형",   cls: "bg-blue-100 text-blue-700" } :
+                  null;
+
+                return (
+                  <div key={r.id} className="px-5 py-4 hover:bg-gray-50/60 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                          {typeLabel && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${typeLabel.cls}`}>
+                              {typeLabel.label}
+                            </span>
+                          )}
+                          <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                            {r.category}
+                          </span>
+                        </div>
+                        <p className="text-sm font-bold text-hwaseong-text leading-snug">{r.title}</p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-xs text-gray-500">
+                          <span>👨‍🏫 {leaderName}</span>
+                          <span>🏢 {r.client?.name ?? "—"}</span>
+                          {r.address && <span>📍 {r.address}</span>}
+                          <span>👥 {r.participant_count}명</span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          {r.start_date}{r.end_date && r.end_date !== r.start_date ? ` ~ ${r.end_date}` : ""}
+                        </p>
+                        {isMulti && pct !== null && (
+                          <div className="mt-2 flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-green-500 rounded-full" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-[10px] font-bold text-green-700 flex-shrink-0">
+                              {submitted}/{total}회 · {pct}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      {!isMulti && (
+                        <span className="flex-shrink-0 text-[10px] font-bold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-xl self-center">
+                          진행 중
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 푸터 */}
+            <div className="px-6 py-4 border-t border-gray-100 flex-shrink-0">
+              <a
+                href="/admin/requests"
+                className="block w-full py-2.5 text-center text-sm font-bold text-hwaseong-blue bg-hwaseong-blue/5 border border-hwaseong-blue/20 rounded-2xl hover:bg-hwaseong-blue/10 transition-colors"
+              >
+                전체 요청 관리 →
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
     </>
+  );
+}
+
+type ActionColorClass = {
+  bg: string; border: string; iconBg: string; text: string; badgeBg: string; sub: string;
+};
+
+function StatActionCard({ icon, label, sub, count, alertLabel, colorClass }: {
+  icon: string; label: string; sub: string; count: number; alertLabel: string; colorClass: ActionColorClass;
+}) {
+  const active = count > 0;
+  return (
+    <div className={`rounded-2xl border p-4 flex flex-col gap-3 transition-colors ${active ? `${colorClass.bg} ${colorClass.border}` : "bg-white border-gray-100"}`}>
+      <div className="flex items-center justify-between">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${active ? colorClass.iconBg : "bg-gray-100"}`}>
+          {icon}
+        </div>
+        {active && (
+          <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${colorClass.badgeBg} ${colorClass.text}`}>
+            {alertLabel}
+          </span>
+        )}
+      </div>
+      <div>
+        <p className={`text-3xl font-black leading-none ${active ? colorClass.text : "text-gray-300"}`}>{count}</p>
+        <p className={`text-xs font-semibold mt-1 ${active ? colorClass.text : "text-gray-400"}`}>{label}</p>
+        <p className={`text-[11px] mt-0.5 ${active ? colorClass.sub : "text-gray-300"}`}>{sub}</p>
+      </div>
+    </div>
+  );
+}
+
+type InfoColorClass = {
+  border: string; iconBg: string; badgeText: string; badgeBg: string;
+};
+
+function StatInfoCard({ icon, label, sub, value, badge, colorClass, onClick }: {
+  icon: string; label: string; sub: string; value: number; badge: string; colorClass: InfoColorClass;
+  onClick?: () => void;
+}) {
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag
+      onClick={onClick}
+      className={`bg-white rounded-2xl border p-4 flex flex-col gap-3 ${colorClass.border} ${onClick ? "cursor-pointer hover:shadow-md transition-shadow text-left w-full" : ""}`}
+    >
+      <div className="flex items-center justify-between">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${colorClass.iconBg}`}>
+          {icon}
+        </div>
+        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${colorClass.badgeBg} ${colorClass.badgeText}`}>
+          {badge}
+        </span>
+      </div>
+      <div>
+        <p className="text-3xl font-black leading-none text-hwaseong-text">{value}</p>
+        <p className="text-xs font-semibold mt-1 text-gray-600">{label}</p>
+        <p className="text-[11px] mt-0.5 text-gray-400">{onClick ? "클릭해서 목록 보기" : sub}</p>
+      </div>
+    </Tag>
   );
 }
 

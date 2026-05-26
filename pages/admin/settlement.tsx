@@ -6,14 +6,25 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 // ─── 타입 ──────────────────────────────────────────────────────────────────
 
+type RejectionRecord = {
+  rejected_at: string;
+  reason: string | null;
+  resubmitted_at: string;
+};
+
 type SettlementReport = {
   id: string;
   attendance_count: number;
   image_urls: string[];
   report_text: string | null;
   rating_from_client: number | null;
+  client_feedback: string | null;
   submitted_at: string;
   lecture_date: string | null;
+  lecture_dates: string[];
+  client_rejected_at: string | null;
+  client_rejection_reason: string | null;
+  rejection_history: RejectionRecord[];
   admin_approved_at: string | null;
   admin_approved_by: string | null;
   admin_note: string | null;
@@ -53,6 +64,7 @@ type InstructorFee = {
     address: string | null;
     location_type: string | null;
     frequency: string | null;
+    lecture_hours: number | null;
     leader: {
       id: string;
       profiles: { name: string; email: string } | null;
@@ -67,6 +79,8 @@ type RentalFee = {
   category: string;
   start_date: string;
   status: string;
+  session_count: number;
+  lecture_hours: number;
   needs_venue: boolean;
   rental_venue_id: string | null;
   needs_equipment: boolean;
@@ -262,10 +276,12 @@ function ExportDropdown({ onPDF, onCSV }: { onPDF: () => void; onCSV: () => void
 // ─── 인라인 금액 편집 셀 ───────────────────────────────────────────────────
 
 function FeeCell({
-  id, fee, editing, onStartEdit, onSave, onCancel, saving,
+  id, fee, suggestedFee, hintText, editing, onStartEdit, onSave, onCancel, saving,
 }: {
   id: string;
   fee: number;
+  suggestedFee?: number;
+  hintText?: string;
   editing: { id: string; fee: string } | null;
   onStartEdit: (id: string, fee: number) => void;
   onSave: (id: string, fee: string) => void;
@@ -274,27 +290,30 @@ function FeeCell({
 }) {
   if (editing?.id === id) {
     return (
-      <div className="flex items-center gap-1">
-        <input
-          type="number" min="0" step="1000"
-          value={editing.fee}
-          onChange={(e) => onStartEdit(id, Number(e.target.value))}
-          className="w-24 px-2 py-1 border border-hwaseong-blue rounded-lg text-xs text-right focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onSave(id, editing.fee);
-            if (e.key === "Escape") onCancel();
-          }}
-        />
-        <span className="text-xs text-gray-400">원</span>
-        <button onClick={() => onSave(id, editing.fee)} disabled={saving} className="px-2 py-1 bg-hwaseong-blue text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-50">저장</button>
-        <button onClick={onCancel} className="px-1.5 py-1 text-xs text-gray-400 rounded-lg hover:bg-gray-100">✕</button>
+      <div className="flex flex-col gap-1 items-end">
+        <div className="flex items-center gap-1">
+          <input
+            type="number" min="0" step="1000"
+            value={editing.fee}
+            onChange={(e) => onStartEdit(id, Number(e.target.value))}
+            className="w-24 px-2 py-1 border border-hwaseong-blue rounded-lg text-xs text-right focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSave(id, editing.fee);
+              if (e.key === "Escape") onCancel();
+            }}
+          />
+          <span className="text-xs text-gray-400">원</span>
+          <button onClick={() => onSave(id, editing.fee)} disabled={saving} className="px-2 py-1 bg-hwaseong-blue text-white text-xs font-bold rounded-lg hover:bg-blue-900 disabled:opacity-50">저장</button>
+          <button onClick={onCancel} className="px-1.5 py-1 text-xs text-gray-400 rounded-lg hover:bg-gray-100">✕</button>
+        </div>
+        {hintText && <span className="text-[10px] text-gray-400">{hintText}</span>}
       </div>
     );
   }
   return (
     <button
-      onClick={() => onStartEdit(id, fee)}
+      onClick={() => onStartEdit(id, fee > 0 ? fee : (suggestedFee ?? 0))}
       className="flex items-center gap-1 group"
       title="클릭해서 수정"
     >
@@ -350,7 +369,7 @@ export default function SettlementPage() {
   const [reports, setReports] = useState<SettlementReport[]>([]);
   const [fetching, setFetching] = useState(true);
   const [selected, setSelected] = useState<SettlementReport | null>(null);
-  const [filterApproved, setFilterApproved] = useState<"all" | "approved" | "pending">("all");
+  const [filterApproved, setFilterApproved] = useState<"all" | "client_pending" | "ready" | "rejected" | "approved">("all");
   const [search, setSearch] = useState("");
   const [approving, setApproving] = useState(false);
   const [noteInput, setNoteInput] = useState("");
@@ -414,10 +433,17 @@ export default function SettlementPage() {
 
   // ── 보고서 승인 ──
 
+  // 상태 분류 헬퍼
+  function reportStatus(r: SettlementReport): "rejected" | "client_pending" | "ready" | "approved" {
+    if (r.admin_approved_at) return "approved";
+    if (r.client_rejected_at) return "rejected";
+    if (r.rating_from_client !== null) return "ready";
+    return "client_pending";
+  }
+
   const filtered = useMemo(() => {
     let list = reports;
-    if (filterApproved === "approved") list = list.filter((r) => r.admin_approved_at !== null);
-    if (filterApproved === "pending")  list = list.filter((r) => r.admin_approved_at === null);
+    if (filterApproved !== "all") list = list.filter((r) => reportStatus(r) === filterApproved);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -431,9 +457,12 @@ export default function SettlementPage() {
     return list;
   }, [reports, filterApproved, search]);
 
-  const summaryApproved  = useMemo(() => reports.filter((r) => r.admin_approved_at !== null).length, [reports]);
-  const summaryPending   = useMemo(() => reports.filter((r) => r.admin_approved_at === null).length, [reports]);
-  const summaryAttendees = useMemo(() => reports.reduce((s, r) => s + r.attendance_count, 0), [reports]);
+  const summaryApproved      = useMemo(() => reports.filter((r) => reportStatus(r) === "approved").length, [reports]);
+  const summaryReady         = useMemo(() => reports.filter((r) => reportStatus(r) === "ready").length, [reports]);
+  const summaryClientPending = useMemo(() => reports.filter((r) => reportStatus(r) === "client_pending").length, [reports]);
+  const summaryRejected      = useMemo(() => reports.filter((r) => reportStatus(r) === "rejected").length, [reports]);
+  const summaryPending       = summaryReady; // 헤더 뱃지용 (운영자 승인 대기)
+  const summaryAttendees     = useMemo(() => reports.reduce((s, r) => s + r.attendance_count, 0), [reports]);
 
   async function handleApprove() {
     if (!selected || approving) return;
@@ -566,7 +595,7 @@ export default function SettlementPage() {
 
   return (
     <>
-      <Head><title>활동 결과 및 정산 관리 | 화성 AI 시민리더 잇다</title></Head>
+      <Head><title>보고서 및 정산 | 화성 AI 시민리더 잇다</title></Head>
 
       {showCert && selected && (
         <div className="hidden print:block" ref={printRef}>
@@ -574,13 +603,13 @@ export default function SettlementPage() {
         </div>
       )}
 
-      <DashboardLayout pageTitle="활동 결과 및 정산 관리">
+      <DashboardLayout pageTitle="보고서 및 정산">
 
         {/* ── 페이지 헤더 ── */}
         <div className="bg-gradient-to-br from-emerald-700 to-teal-600 rounded-3xl p-5 flex items-center gap-4">
           <div className="w-12 h-12 bg-white/10 border border-white/20 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0">💰</div>
           <div className="flex-1 min-w-0">
-            <h2 className="text-lg font-black text-white">활동 결과 및 정산 관리</h2>
+            <h2 className="text-lg font-black text-white">보고서 및 정산</h2>
             <p className="text-emerald-200 text-xs mt-0.5">보고서 승인 · 강사료 지급 · 대여료 수납을 통합 관리합니다.</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
@@ -642,10 +671,10 @@ export default function SettlementPage() {
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { icon: "📋", label: "전체 보고서", value: reports.length,   color: "text-hwaseong-text", bg: "bg-blue-50",   border: "border-blue-100" },
-                { icon: "✅", label: "승인 완료",   value: summaryApproved,  color: "text-green-600",    bg: "bg-green-50",  border: "border-green-100" },
-                { icon: "⏳", label: "승인 대기",   value: summaryPending,   color: summaryPending > 0 ? "text-amber-600" : "text-gray-400", bg: summaryPending > 0 ? "bg-amber-50" : "bg-gray-50", border: summaryPending > 0 ? "border-amber-200" : "border-gray-100" },
-                { icon: "👥", label: "누적 수강생", value: `${summaryAttendees}명`, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100" },
+                { icon: "📋", label: "전체 보고서",      value: reports.length,       color: "text-hwaseong-text", bg: "bg-blue-50",   border: "border-blue-100" },
+                { icon: "⏳", label: "수요처 평가 대기",  value: summaryClientPending,  color: summaryClientPending > 0 ? "text-sky-600" : "text-gray-400",   bg: summaryClientPending > 0 ? "bg-sky-50"   : "bg-gray-50", border: summaryClientPending > 0 ? "border-sky-200"   : "border-gray-100" },
+                { icon: "✅", label: "최종 승인 대기",    value: summaryReady,          color: summaryReady > 0 ? "text-amber-600" : "text-gray-400",          bg: summaryReady > 0      ? "bg-amber-50"  : "bg-gray-50", border: summaryReady > 0      ? "border-amber-200"  : "border-gray-100" },
+                { icon: "🏆", label: "승인 완료",         value: summaryApproved,       color: "text-green-600",    bg: "bg-green-50",  border: "border-green-100" },
               ].map((c) => (
                 <div key={c.label} className={`${c.bg} ${c.border} border rounded-2xl p-5 shadow-sm`}>
                   <div className="text-2xl mb-2">{c.icon}</div>
@@ -668,16 +697,22 @@ export default function SettlementPage() {
                       <span>📊</span> 엑셀 내보내기
                     </button>
                   </div>
-                  <div className="flex gap-1">
-                    {(["all", "pending", "approved"] as const).map((f) => (
+                  <div className="grid grid-cols-3 gap-1">
+                    {([
+                      { key: "all",            label: `전체 ${reports.length}` },
+                      { key: "client_pending", label: `평가대기 ${summaryClientPending}` },
+                      { key: "ready",          label: `승인대기 ${summaryReady}` },
+                      { key: "rejected",       label: `반려 ${summaryRejected}` },
+                      { key: "approved",       label: `완료 ${summaryApproved}` },
+                    ] as const).map((f) => (
                       <button
-                        key={f}
-                        onClick={() => setFilterApproved(f)}
-                        className={`flex-1 text-xs font-semibold py-1.5 rounded-xl transition-colors ${
-                          filterApproved === f ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                        key={f.key}
+                        onClick={() => setFilterApproved(f.key)}
+                        className={`text-[11px] font-semibold py-1.5 rounded-xl transition-colors ${
+                          filterApproved === f.key ? "bg-hwaseong-blue text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
                         }`}
                       >
-                        {f === "all" ? `전체 ${reports.length}` : f === "pending" ? `미승인 ${summaryPending}` : `승인 ${summaryApproved}`}
+                        {f.label}
                       </button>
                     ))}
                   </div>
@@ -704,7 +739,15 @@ export default function SettlementPage() {
                   ) : (
                     filtered.map((r) => {
                       const isSelected = selected?.id === r.id;
-                      const approved = r.admin_approved_at !== null;
+                      const st = reportStatus(r);
+                      const badgeCls = st === "approved"       ? "bg-green-100 text-green-700"
+                                     : st === "ready"          ? "bg-amber-100 text-amber-700"
+                                     : st === "rejected"       ? "bg-red-100 text-red-600"
+                                     :                           "bg-sky-100 text-sky-600";
+                      const badgeLabel = st === "approved" ? "✓ 승인완료"
+                                       : st === "ready"    ? "⏳ 승인대기"
+                                       : st === "rejected" ? "↩ 반려됨"
+                                       :                     "🕐 평가대기";
                       return (
                         <button
                           key={r.id}
@@ -713,8 +756,8 @@ export default function SettlementPage() {
                         >
                           <div className="flex items-start justify-between gap-2 mb-1">
                             <p className="text-xs font-bold text-hwaseong-text leading-tight line-clamp-2 flex-1">{r.match?.title ?? "—"}</p>
-                            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${approved ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                              {approved ? "✓ 승인" : "미승인"}
+                            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badgeCls}`}>
+                              {badgeLabel}
                             </span>
                           </div>
                           <p className="text-[11px] text-gray-400 mb-1.5 truncate">
@@ -726,6 +769,9 @@ export default function SettlementPage() {
                               <span className="text-[10px] text-gray-400">👥 {r.attendance_count}명</span>
                               {r.rating_from_client !== null && (
                                 <span className="text-[10px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
+                              )}
+                              {(r.rejection_history?.length ?? 0) > 0 && (
+                                <span className="text-[10px] text-gray-400">↩{r.rejection_history.length}회</span>
                               )}
                             </div>
                           </div>
@@ -749,11 +795,23 @@ export default function SettlementPage() {
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                       <div className="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${selected.admin_approved_at ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
-                              {selected.admin_approved_at ? "✓ 승인 완료" : "⏳ 승인 대기"}
-                            </span>
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            {(() => {
+                              const st = reportStatus(selected);
+                              const cls = st === "approved" ? "bg-green-100 text-green-700"
+                                        : st === "ready"    ? "bg-amber-100 text-amber-700"
+                                        : st === "rejected" ? "bg-red-100 text-red-600"
+                                        :                     "bg-sky-100 text-sky-600";
+                              const lbl = st === "approved" ? "✓ 승인 완료"
+                                        : st === "ready"    ? "⏳ 최종 승인 대기"
+                                        : st === "rejected" ? "↩ 수요처 반려 (재작성 중)"
+                                        :                     "🕐 수요처 평가 대기";
+                              return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{lbl}</span>;
+                            })()}
                             <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{selected.match?.category ?? "—"}</span>
+                            {selected.rejection_history?.length > 0 && (
+                              <span className="text-[10px] bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full">↩ 반려이력 {selected.rejection_history.length}회</span>
+                            )}
                           </div>
                           <h3 className="font-bold text-hwaseong-text text-base leading-tight">{selected.match?.title ?? "—"}</h3>
                         </div>
@@ -797,16 +855,71 @@ export default function SettlementPage() {
                                   : "아쉬움"
                                 : "수요처가 아직 평가하지 않았습니다."}
                             </p>
+                            {selected.client_feedback && (
+                              <p className="text-[11px] text-gray-500 mt-1 italic">"{selected.client_feedback}"</p>
+                            )}
                           </div>
                         </div>
                       </div>
                       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">강의 일지</h4>
-                        <p className="text-xs text-gray-600 leading-relaxed">
+                        <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">
                           {selected.report_text || <span className="text-gray-300">강사가 작성한 강의 일지가 없습니다.</span>}
                         </p>
                       </div>
                     </div>
+
+                    {/* ── 반려/재작성 이력 타임라인 ── */}
+                    {(selected.rejection_history?.length > 0 || selected.client_rejected_at) && (
+                      <div className="bg-white rounded-2xl border border-orange-100 shadow-sm p-4">
+                        <h4 className="text-xs font-bold text-orange-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+                          <span>↩</span> 반려 / 재작성 이력
+                        </h4>
+                        <div className="space-y-3">
+                          {/* 과거 이력 */}
+                          {(selected.rejection_history ?? []).map((rec, i) => (
+                            <div key={i} className="flex gap-3">
+                              <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                                <div className="w-6 h-6 rounded-full bg-orange-100 flex items-center justify-center text-[10px] font-black text-orange-600">{i + 1}</div>
+                                {(i < (selected.rejection_history.length - 1) || selected.client_rejected_at) && (
+                                  <div className="flex-1 w-px bg-orange-100 min-h-[12px]" />
+                                )}
+                              </div>
+                              <div className="flex-1 pb-2">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className="text-[10px] font-bold text-orange-600">수요처 반려</span>
+                                  <span className="text-[10px] text-gray-400">{fmtDateTime(rec.rejected_at)}</span>
+                                </div>
+                                {rec.reason && (
+                                  <p className="text-xs text-gray-600 bg-orange-50 rounded-lg px-2.5 py-1.5 mb-1">"{rec.reason}"</p>
+                                )}
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-bold text-blue-600">강사 재작성 완료</span>
+                                  <span className="text-[10px] text-gray-400">{fmtDateTime(rec.resubmitted_at)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {/* 현재 반려 중 */}
+                          {selected.client_rejected_at && (
+                            <div className="flex gap-3">
+                              <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center text-[10px] font-black text-red-600 flex-shrink-0">
+                                {(selected.rejection_history?.length ?? 0) + 1}
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className="text-[10px] font-bold text-red-600">수요처 반려 (재작성 대기 중)</span>
+                                  <span className="text-[10px] text-gray-400">{fmtDateTime(selected.client_rejected_at)}</span>
+                                </div>
+                                {selected.client_rejection_reason && (
+                                  <p className="text-xs text-gray-600 bg-red-50 rounded-lg px-2.5 py-1.5">"{selected.client_rejection_reason}"</p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
@@ -853,23 +966,44 @@ export default function SettlementPage() {
                         </div>
                       )}
                       {!selected.admin_approved_at && (
-                        <textarea
-                          value={noteInput}
-                          onChange={(e) => setNoteInput(e.target.value)}
-                          placeholder="검토 메모 (선택 사항) — 정산 특이사항, 감면 사유 등"
-                          rows={2}
-                          className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none"
-                        />
+                        <>
+                          {/* 승인 불가 안내 */}
+                          {selected.client_rejected_at && (
+                            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                              <span className="text-red-500 flex-shrink-0 mt-0.5">↩</span>
+                              <div>
+                                <p className="text-xs font-bold text-red-700">수요처 반려 상태</p>
+                                <p className="text-[11px] text-red-600">강사가 보고서를 재작성해야 승인할 수 있습니다.</p>
+                              </div>
+                            </div>
+                          )}
+                          {!selected.client_rejected_at && selected.rating_from_client === null && (
+                            <div className="bg-sky-50 border border-sky-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                              <span className="text-sky-500 flex-shrink-0 mt-0.5">🕐</span>
+                              <div>
+                                <p className="text-xs font-bold text-sky-700">수요처 평가 대기 중</p>
+                                <p className="text-[11px] text-sky-600">수요처가 보고서를 평가한 후 최종 승인할 수 있습니다.</p>
+                              </div>
+                            </div>
+                          )}
+                          <textarea
+                            value={noteInput}
+                            onChange={(e) => setNoteInput(e.target.value)}
+                            placeholder="검토 메모 (선택 사항) — 정산 특이사항, 감면 사유 등"
+                            rows={2}
+                            className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none"
+                          />
+                        </>
                       )}
                       <div className="flex flex-col sm:flex-row gap-2">
                         {!selected.admin_approved_at ? (
                           <button
                             onClick={handleApprove}
-                            disabled={approving}
-                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-50"
+                            disabled={approving || selected.rating_from_client === null || !!selected.client_rejected_at}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             {approving ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <span>✅</span>}
-                            {approving ? "처리 중..." : "보고서 승인"}
+                            {approving ? "처리 중..." : "최종 승인"}
                           </button>
                         ) : (
                           <div className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-100 text-gray-400 text-sm font-semibold rounded-xl cursor-default">
@@ -965,7 +1099,10 @@ export default function SettlementPage() {
                             </div>
                             <div className="flex-shrink-0 min-w-[120px] text-right" onClick={(e) => e.stopPropagation()}>
                               <FeeCell
-                                id={r.id} fee={r.instructor_fee} editing={editingIFee}
+                                id={r.id} fee={r.instructor_fee}
+                                suggestedFee={(r.match?.lecture_hours ?? 2) * 30000}
+                                hintText={`기준: 30,000원 × ${r.match?.lecture_hours ?? 2}시간 = ${fmtWon((r.match?.lecture_hours ?? 2) * 30000)}`}
+                                editing={editingIFee}
                                 onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
                                 onSave={saveIFee} onCancel={() => setEditingIFee(null)}
                                 saving={iFeeSaving}
@@ -1143,17 +1280,15 @@ export default function SettlementPage() {
                               </div>
                             </div>
                             <div className="flex-shrink-0 min-w-[140px] text-right" onClick={(e) => e.stopPropagation()}>
-                              <div className="mb-1">
-                                <FeeCell
-                                  id={r.id} fee={r.rental_fee_total} editing={editingRFee}
-                                  onStartEdit={(id, fee) => setEditingRFee({ id, fee: String(fee) })}
-                                  onSave={saveRFee} onCancel={() => setEditingRFee(null)}
-                                  saving={rFeeSaving}
-                                />
-                              </div>
-                              {r.suggested_fee > 0 && (
-                                <p className="text-[10px] text-gray-400" title="설정 기준 자동 산출 금액">참고 {fmtWon(r.suggested_fee)}</p>
-                              )}
+                              <FeeCell
+                                id={r.id} fee={r.rental_fee_total}
+                                suggestedFee={r.suggested_fee > 0 ? r.suggested_fee : undefined}
+                                hintText={r.suggested_fee > 0 ? `${r.session_count}회 × ${r.lecture_hours}시간 일괄 = ${fmtWon(r.suggested_fee)}` : undefined}
+                                editing={editingRFee}
+                                onStartEdit={(id, fee) => setEditingRFee({ id, fee: String(fee) })}
+                                onSave={saveRFee} onCancel={() => setEditingRFee(null)}
+                                saving={rFeeSaving}
+                              />
                             </div>
                             <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]" onClick={(e) => e.stopPropagation()}>
                               <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${noFee ? "bg-gray-100 text-gray-400" : "bg-amber-100 text-amber-700"}`}>
@@ -1443,8 +1578,13 @@ export default function SettlementPage() {
                     )}
                     {selectedRFee.suggested_fee > 0 && (
                       <div className="flex gap-2">
-                        <span className="text-purple-400 text-xs w-14 flex-shrink-0">참고 금액</span>
-                        <span className="text-purple-900 text-xs font-semibold">{fmtWon(selectedRFee.suggested_fee)}</span>
+                        <span className="text-purple-400 text-xs w-14 flex-shrink-0">산출 합계</span>
+                        <span className="text-purple-900 text-xs font-semibold">
+                          {fmtWon(selectedRFee.suggested_fee)}
+                          <span className="text-purple-400 font-normal ml-1">
+                            ({selectedRFee.session_count}회 × {selectedRFee.lecture_hours}시간)
+                          </span>
+                        </span>
                       </div>
                     )}
                   </div>

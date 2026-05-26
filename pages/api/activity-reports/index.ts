@@ -25,7 +25,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
 
       const { data, error } = await supabaseAdmin
         .from("activity_reports")
-        .select(`*, match:match_requests!activity_reports_match_id_fkey(title, address, start_date)`)
+        .select(`*, match:match_requests!activity_reports_match_id_fkey(
+          title, address, start_date, lecture_type, session_count
+        )`)
         .eq("instructor_id", lp.id)
         .order("submitted_at", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
@@ -46,12 +48,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     if (user.role !== "leader")
       return res.status(403).json({ error: "강사만 활동 보고서를 제출할 수 있습니다." });
 
-    const { matchId, lectureDate, attendeeCount, reportText, imageUrls } = req.body as {
-      matchId: string; lectureDate: string; attendeeCount: number;
+    const { matchId, lectureDate, lectureDates, attendeeCount, reportText, imageUrls } = req.body as {
+      matchId: string; lectureDate?: string; lectureDates?: string[]; attendeeCount: number;
       reportText?: string; imageUrls?: string[];
     };
 
-    if (!matchId || !lectureDate || !attendeeCount) {
+    const resolvedLectureDate = lectureDate ?? lectureDates?.[0] ?? null;
+    if (!matchId || !resolvedLectureDate || !attendeeCount) {
       return res.status(400).json({ error: "필수 입력값이 누락되었습니다." });
     }
 
@@ -61,7 +64,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
 
     const { data: mr } = await supabaseAdmin
       .from("match_requests")
-      .select("id, status, leader_id")
+      .select("id, status, leader_id, lecture_type, session_count")
       .eq("id", matchId)
       .single();
 
@@ -70,31 +73,62 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     if (!["matched", "ongoing"].includes(mr.status))
       return res.status(400).json({ error: "배정된 매칭만 보고서를 제출할 수 있습니다." });
 
-    const { data: existing } = await supabaseAdmin
-      .from("activity_reports").select("id").eq("match_id", matchId).maybeSingle();
-    if (existing) return res.status(409).json({ error: "이미 제출된 보고서가 있습니다." });
+    // ── 회차(session_index) 계산 ─────────────────────────────────────────
+    let sessionIndex = 0;
+
+    if (mr.lecture_type === "longterm") {
+      const { count } = await supabaseAdmin
+        .from("activity_reports")
+        .select("id", { count: "exact", head: true })
+        .eq("match_id", matchId);
+      sessionIndex = count ?? 0;
+      const totalSessions = mr.session_count ?? 1;
+      if (sessionIndex >= totalSessions) {
+        return res.status(409).json({
+          error: `모든 회차(${totalSessions}회) 보고서가 이미 제출되었습니다.`,
+        });
+      }
+    } else {
+      // 원데이형/집중코스형: 매칭 당 보고서 1개
+      const { data: existing } = await supabaseAdmin
+        .from("activity_reports").select("id").eq("match_id", matchId).maybeSingle();
+      if (existing) return res.status(409).json({ error: "이미 제출된 보고서가 있습니다." });
+    }
+
+    // ── 보고서 저장 ───────────────────────────────────────────────────────
+    const normalizedDates = Array.isArray(lectureDates) && lectureDates.length > 0
+      ? lectureDates.filter(Boolean)
+      : [];
 
     const { data: report, error } = await supabaseAdmin
       .from("activity_reports")
       .insert({
-        match_id: matchId,
-        instructor_id: lp.id,
-        lecture_date: lectureDate,
+        match_id:         matchId,
+        instructor_id:    lp.id,
+        session_index:    sessionIndex,
+        lecture_date:     resolvedLectureDate,
+        lecture_dates:    normalizedDates,
         attendance_count: Number(attendeeCount),
-        report_text: reportText ?? null,
-        image_urls: Array.isArray(imageUrls) ? imageUrls.slice(0, 3) : [],
+        report_text:      reportText ?? null,
+        image_urls:       Array.isArray(imageUrls) ? imageUrls.slice(0, 3) : [],
       })
       .select()
       .single();
 
     if (error) return res.status(500).json({ error: error.message });
 
+    // ── 진행 상태 갱신 ────────────────────────────────────────────────────
+    const isLastSession =
+      mr.lecture_type !== "longterm" || sessionIndex + 1 >= (mr.session_count ?? 1);
+
     await Promise.all([
-      supabaseAdmin.from("match_requests").update({ status: "completed" }).eq("id", matchId),
+      isLastSession
+        ? supabaseAdmin.from("match_requests").update({ status: "completed" }).eq("id", matchId)
+        : Promise.resolve(),
       supabaseAdmin.rpc("increment_lecture_count", { p_leader_id: lp.id }),
     ]);
 
-    return res.status(201).json(report);
+    return res.status(201).json({ ...report, isLastSession });
   }
 
   return res.status(405).end();

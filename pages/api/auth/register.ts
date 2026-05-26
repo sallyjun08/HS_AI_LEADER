@@ -8,10 +8,10 @@ type Role = (typeof VALID_ROLES)[number];
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { email, password, name, role, orgName, orgType, certImageUrl, specialties, availableRegions } = req.body as {
+  const { email, password, name, role, orgName, orgType, certImageUrl, specialties, availableRegions, phone } = req.body as {
     email: string; password: string; name: string; role: string;
     orgName?: string; orgType?: string; certImageUrl?: string;
-    specialties?: string[]; availableRegions?: string[];
+    specialties?: string[]; availableRegions?: string[]; phone?: string;
   };
 
   if (!email || !password || !name || !VALID_ROLES.includes(role as Role)) {
@@ -61,6 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .upsert(
         {
           user_id: userId,
+          ...(phone?.trim() ? { phone: phone.trim() } : {}),
           ...(certImageUrl ? { cert_image_url: certImageUrl } : {}),
           ...(Array.isArray(specialties) && specialties.length > 0 ? { specialties } : {}),
           ...(Array.isArray(availableRegions) && availableRegions.length > 0 ? { available_regions: availableRegions } : {}),

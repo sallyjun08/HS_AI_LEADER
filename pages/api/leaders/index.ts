@@ -65,7 +65,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: { userId
     if (availableRegions !== undefined) updateData.available_regions = availableRegions;
     if (availableTimes !== undefined) updateData.available_times = availableTimes;
     if (phone !== undefined) updateData.phone = phone;
-    // preferred_audiences column does not exist in DB — omit
+    if (preferredAudiences !== undefined) updateData.preferred_audiences = preferredAudiences;
     if (lat !== undefined && lng !== undefined) {
       updateData.lat = lat;
       updateData.lng = lng;

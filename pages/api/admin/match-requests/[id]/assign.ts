@@ -42,6 +42,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
   });
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // 배정 시각 기록 — 24시간 내 미응답 자동 거절에 사용
+  await supabaseAdmin
+    .from("match_requests")
+    .update({ matched_at: new Date().toISOString() })
+    .eq("id", id);
+
   return res.status(200).json(data);
 }
 

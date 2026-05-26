@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 import { requireAuth, type TokenPayload } from "@/lib/auth";
 
 // GET /api/admin/settlement/reports
-// status=completed 인 match_requests 에 연결된 activity_reports 전체 목록
+// activity_reports 전체 목록 (반려 이력 포함)
 
 async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPayload) {
   if (req.method !== "GET") return res.status(405).end();
@@ -16,8 +16,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       image_urls,
       report_text,
       rating_from_client,
+      client_feedback,
       submitted_at,
       lecture_date,
+      lecture_dates,
+      client_rejected_at,
+      client_rejection_reason,
+      rejection_history,
       admin_approved_at,
       admin_approved_by,
       admin_note,
@@ -35,7 +40,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // status=completed 인 건만 (match 쪽에서 필터 불가 → JS 에서 필터)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (data ?? []).filter((r: any) => r.match !== null);
 

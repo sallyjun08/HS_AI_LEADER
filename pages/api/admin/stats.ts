@@ -22,11 +22,20 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     supabaseAdmin.from("match_requests").select("*", { count: "exact", head: true }).in("status", ["matched", "ongoing"]),
     supabaseAdmin.from("match_requests").select("*", { count: "exact", head: true }).eq("status", "completed"),
     supabaseAdmin.from("activity_reports").select("*", { count: "exact", head: true }),
-    supabaseAdmin.from("activity_reports").select("attendance_count, rating_from_client, lecture_date"),
+    supabaseAdmin.from("activity_reports").select("match_id, session_index, attendance_count, rating_from_client, lecture_date"),
   ]);
 
   const reports = reportRows ?? [];
-  const totalAttendees = reports.reduce((s, r) => s + (r.attendance_count ?? 0), 0);
+
+  // 장기정기형·집중형은 회차마다 같은 수강생이 참여하므로, match_id별 첫 회차(session_index 최솟값)만 집계
+  const sorted = [...reports].sort((a, b) => (a.session_index ?? 0) - (b.session_index ?? 0));
+  const matchAttendance = new Map<string, number>();
+  for (const r of sorted) {
+    if (r.match_id && !matchAttendance.has(r.match_id)) {
+      matchAttendance.set(r.match_id, r.attendance_count ?? 0);
+    }
+  }
+  const totalAttendees = [...matchAttendance.values()].reduce((s, v) => s + v, 0);
   const ratedReports = reports.filter((r) => r.rating_from_client !== null);
   const avgSatisfaction =
     ratedReports.length > 0

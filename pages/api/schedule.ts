@@ -18,6 +18,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     .select(`
       id, title, category, start_date, end_date, address, notes,
       participant_count, target_age, frequency, location_type,
+      contact_phone,
       client_profile:profiles!match_requests_client_id_fkey(name, email, phone),
       materials:lecture_materials(
         id, title, file_url, file_type, file_size_kb, created_at,

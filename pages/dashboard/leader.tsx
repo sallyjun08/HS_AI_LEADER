@@ -3,21 +3,32 @@ import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import LectureCalendar from "@/components/LectureCalendar";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 type MatchRequest = {
   id: string;
+  title: string;
   start_date: string;
+  end_date: string | null;
   status: string;
+  lecture_type: "oneday" | "intensive" | "longterm" | null;
+  session_count: number | null;
+  lecture_times: { date?: string; day?: string; startTime?: string; start?: string }[] | null;
+  matched_at: string | null;
 };
 
 type Report = {
   id: string;
   match_id: string;
+  session_index: number;
   lecture_date: string;
   attendance_count: number;
   rating_from_client: number | null;
   admin_approved_at: string | null;
+  instructor_fee: number | null;
+  instructor_fee_paid_at: string | null;
+  match: { title: string; lecture_type: string | null; session_count: number | null } | null;
 };
 
 export default function LeaderDashboard() {
@@ -69,15 +80,29 @@ export default function LeaderDashboard() {
   }, [user]);
 
   const pendingMatches   = useMemo(() => matches.filter((m) => m.status === "matched"), [matches]);
+  const nearestDeadline  = useMemo(() => {
+    const withDeadline = pendingMatches
+      .filter((m) => m.matched_at)
+      .map((m) => new Date(new Date(m.matched_at!).getTime() + 24 * 60 * 60 * 1000));
+    if (!withDeadline.length) return null;
+    return withDeadline.reduce((a, b) => (a < b ? a : b));
+  }, [pendingMatches]);
   const ongoingMatches   = useMemo(() => matches.filter((m) => m.status === "ongoing"), [matches]);
   const completedMatches = useMemo(() => matches.filter((m) => m.status === "completed"), [matches]);
-  const submittedIds     = useMemo(() => new Set(reports.map((r) => r.match_id)), [reports]);
-  const eligibleMatches  = useMemo(
-    () => [...pendingMatches, ...ongoingMatches].filter((m) => !submittedIds.has(m.id)),
-    [pendingMatches, ongoingMatches, submittedIds]
-  );
+  const submittedCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    reports.forEach((r) => map.set(r.match_id, (map.get(r.match_id) ?? 0) + 1));
+    return map;
+  }, [reports]);
 
-  const totalAttendees = useMemo(() => reports.reduce((s, r) => s + r.attendance_count, 0), [reports]);
+  const totalAttendees = useMemo(() => {
+    const sorted = [...reports].sort((a, b) => (a.session_index ?? 0) - (b.session_index ?? 0));
+    const seen = new Map<string, number>();
+    for (const r of sorted) {
+      if (!seen.has(r.match_id)) seen.set(r.match_id, r.attendance_count);
+    }
+    return [...seen.values()].reduce((s, v) => s + v, 0);
+  }, [reports]);
   const ratedReports   = useMemo(() => reports.filter((r) => r.rating_from_client !== null), [reports]);
   const avgRating      = ratedReports.length
     ? (ratedReports.reduce((s, r) => s + Number(r.rating_from_client), 0) / ratedReports.length).toFixed(1)
@@ -97,6 +122,24 @@ export default function LeaderDashboard() {
 
   const pendingApprovalCount = useMemo(() => reports.filter((r) => r.admin_approved_at === null).length, [reports]);
 
+  const paidFee = useMemo(
+    () => reports.filter((r) => r.instructor_fee_paid_at && (r.instructor_fee ?? 0) > 0)
+                 .reduce((s, r) => s + (r.instructor_fee ?? 0), 0),
+    [reports],
+  );
+  const unpaidFee = useMemo(
+    () => reports.filter((r) => r.admin_approved_at && !r.instructor_fee_paid_at && (r.instructor_fee ?? 0) > 0)
+                 .reduce((s, r) => s + (r.instructor_fee ?? 0), 0),
+    [reports],
+  );
+  const recentPaid = useMemo(
+    () => reports
+      .filter((r) => r.instructor_fee_paid_at && (r.instructor_fee ?? 0) > 0)
+      .sort((a, b) => (b.instructor_fee_paid_at ?? "").localeCompare(a.instructor_fee_paid_at ?? ""))
+      .slice(0, 3),
+    [reports],
+  );
+
   const thisMonth = new Date().toISOString().slice(0, 7);
   const thisMonthCount = useMemo(
     () => matches.filter((m) => m.start_date.startsWith(thisMonth) && m.status !== "cancelled" && m.status !== "rejected").length,
@@ -115,6 +158,30 @@ export default function LeaderDashboard() {
     <>
       <Head><title>AI 시민 리더 대시보드 | 화성 AI 시민리더 잇다</title></Head>
       <DashboardLayout pageTitle="현황">
+
+        {/* 매칭 요청 긴급 알림 배너 */}
+        {pendingMatches.length > 0 && (
+          <button
+            onClick={() => router.push("/dashboard/leader/matches")}
+            className="w-full flex items-center gap-4 px-5 py-4 bg-amber-400 rounded-2xl shadow-lg text-left hover:bg-amber-500 active:scale-[0.99] transition-all"
+          >
+            <div className="relative flex-shrink-0">
+              <div className="w-11 h-11 bg-white/30 rounded-xl flex items-center justify-center text-2xl">🔔</div>
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-amber-400 animate-pulse">
+                {pendingMatches.length}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-amber-900">새 매칭 요청 {pendingMatches.length}건이 도착했습니다</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                {nearestDeadline
+                  ? `수락 마감: ${nearestDeadline.toLocaleDateString("ko-KR", { month: "long", day: "numeric" })} ${nearestDeadline.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}${pendingMatches.length > 1 ? " (가장 빠른 건 기준)" : ""}`
+                  : "24시간 내 수락하지 않으면 자동 거절됩니다"}
+              </p>
+            </div>
+            <span className="text-amber-800 font-black text-base flex-shrink-0">→</span>
+          </button>
+        )}
 
         {/* 프로필 히어로 */}
         <div className="bg-gradient-to-br from-hwaseong-blue via-[#003fa3] to-indigo-700 rounded-3xl overflow-hidden">
@@ -197,8 +264,61 @@ export default function LeaderDashboard() {
           </div>
         </div>
 
+        {/* 강사료 정산 현황 */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 pt-4 pb-3 flex items-center justify-between">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide">강사료 정산 현황</h4>
+              <span className="text-[10px] text-gray-400">승인된 보고서 기준</span>
+            </div>
+            <div className="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
+              <div className="px-4 py-3">
+                <p className="text-[10px] text-gray-400 mb-1">누적 지급 완료</p>
+                <p className="text-xl font-black text-green-600">
+                  {paidFee.toLocaleString("ko-KR")}
+                  <span className="text-sm font-semibold ml-0.5">원</span>
+                </p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-[10px] text-gray-400 mb-1">정산 예정 (미지급)</p>
+                <p className={`text-xl font-black ${unpaidFee > 0 ? "text-amber-500" : "text-gray-300"}`}>
+                  {unpaidFee.toLocaleString("ko-KR")}
+                  <span className="text-sm font-semibold ml-0.5">원</span>
+                </p>
+              </div>
+            </div>
+            {recentPaid.length > 0 && (
+              <div className="border-t border-gray-100 px-4 py-3 space-y-2">
+                <p className="text-[10px] font-bold text-gray-400">최근 지급 내역</p>
+                {recentPaid.map((r) => {
+                  const isLongterm = r.match?.lecture_type === "longterm";
+                  const sessionLabel = isLongterm ? ` (${r.session_index + 1}회차)` : "";
+                  return (
+                    <div key={r.id} className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-gray-600 truncate flex-1">
+                        {r.match?.title ?? "—"}
+                        {sessionLabel && (
+                          <span className="ml-1 text-[10px] text-green-700 bg-green-50 px-1.5 py-0.5 rounded-full font-bold">
+                            {r.session_index + 1}회차
+                          </span>
+                        )}
+                      </p>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[10px] text-gray-400">
+                          {r.instructor_fee_paid_at?.slice(0, 10).replace(/-/g, ".")}
+                        </span>
+                        <span className="text-xs font-bold text-green-600">
+                          +{(r.instructor_fee ?? 0).toLocaleString("ko-KR")}원
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
         {/* 처리 필요 항목 */}
-        {(pendingMatches.length > 0 || eligibleMatches.length > 0 || pendingApprovalCount > 0) && (
+        {(pendingMatches.length > 0 || pendingApprovalCount > 0) && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">처리 필요 항목</h4>
             {pendingMatches.length > 0 && (
@@ -214,22 +334,9 @@ export default function LeaderDashboard() {
                 <span className="ml-auto text-amber-500 text-xs">→</span>
               </button>
             )}
-            {eligibleMatches.length > 0 && (
-              <button
-                onClick={() => router.push("/dashboard/leader/reports")}
-                className="w-full flex items-center gap-3 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-left hover:bg-blue-100 transition-colors"
-              >
-                <span className="w-7 h-7 bg-hwaseong-blue rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0">{eligibleMatches.length}</span>
-                <div>
-                  <p className="text-xs font-bold text-blue-800">활동 보고서 미제출 강의</p>
-                  <p className="text-[11px] text-blue-600">보고서를 제출해 주세요</p>
-                </div>
-                <span className="ml-auto text-blue-500 text-xs">→</span>
-              </button>
-            )}
             {pendingApprovalCount > 0 && (
               <button
-                onClick={() => router.push("/dashboard/leader/reports")}
+                onClick={() => router.push("/dashboard/leader/lectures")}
                 className="w-full flex items-center gap-3 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-left hover:bg-gray-100 transition-colors"
               >
                 <span className="w-7 h-7 bg-gray-400 rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0">{pendingApprovalCount}</span>
@@ -257,6 +364,9 @@ export default function LeaderDashboard() {
           </div>
           <span className="text-hwaseong-blue text-sm font-bold">→</span>
         </button>
+
+        {/* 강의 일정 캘린더 */}
+        <LectureCalendar matches={ongoingMatches} />
 
         {/* 월별 강의 차트 */}
         {chartData.length > 0 ? (
@@ -293,3 +403,4 @@ export default function LeaderDashboard() {
     </>
   );
 }
+

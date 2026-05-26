@@ -22,6 +22,8 @@ export interface AuthUser {
     maxClassesMonth: number;
     /** 강사가 설정한 선호/특화 교육 대상 — 매칭 시 대상 적합도 점수 산정에 사용됨 */
     preferredAudiences: string[];
+    bio: string;
+    phone: string;
   } | null;
 }
 

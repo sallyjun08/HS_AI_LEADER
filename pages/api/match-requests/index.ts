@@ -21,19 +21,19 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
       const { data, error } = await supabaseAdmin
         .from("match_requests")
         .select(`*, leader:leader_profiles!match_requests_leader_id_fkey(
-          id, is_verified, rating_avg, specialties, available_regions,
-          profiles!leader_profiles_user_id_fkey(name)
+          id, is_verified, rating_avg, specialties, available_regions, phone,
+          profiles!leader_profiles_user_id_fkey(name, email)
         )`)
         .eq("client_id", user.userId)
         .order("created_at", { ascending: false });
       if (error) return res.status(500).json({ error: error.message });
 
-      // 매칭 확정 전 강사 이름 마스킹
+      // 매칭 확정 전: 강사 이름 마스킹 + 연락처 제거
       const masked = (data ?? []).map((r) => {
         if (!r.leader) return r;
         if (r.status === "matched" || r.status === "ongoing" || r.status === "completed") return r;
         const l = r.leader as { profiles?: { name?: string } };
-        return { ...r, leader: { ...r.leader, profiles: { name: maskName(l.profiles?.name ?? "") } } };
+        return { ...r, leader: { ...r.leader, phone: null, profiles: { name: maskName(l.profiles?.name ?? ""), email: null } } };
       });
       return res.status(200).json(masked);
     }
@@ -45,7 +45,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
 
     const { data, error } = await supabaseAdmin
       .from("match_requests")
-      .select(`*, client:profiles!match_requests_client_id_fkey(name)`)
+      .select(`*, client:profiles!match_requests_client_id_fkey(name), lecture_type, session_count, lecture_times`)
       .eq("leader_id", lp.id)
       .order("created_at", { ascending: false });
     if (error) return res.status(500).json({ error: error.message });

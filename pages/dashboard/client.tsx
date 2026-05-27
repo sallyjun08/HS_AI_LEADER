@@ -366,6 +366,10 @@ export default function ClientDashboard() {
     if (!loading && (!user || user.role !== "client")) router.replace("/login");
   }, [loading, user, router]);
 
+  useEffect(() => {
+    if (user?.orgName) setForm((p) => ({ ...p, institutionName: p.institutionName || user.orgName! }));
+  }, [user?.orgName]);
+
   async function fetchAll() {
     const [reqs, reps] = await Promise.all([
       fetch("/api/match-requests").then((r) => r.json()).catch(() => []),

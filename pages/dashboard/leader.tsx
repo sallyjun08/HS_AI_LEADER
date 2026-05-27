@@ -120,7 +120,7 @@ export default function LeaderDashboard() {
       .slice(-6);
   }, [reports]);
 
-  const pendingApprovalCount = useMemo(() => reports.filter((r) => r.admin_approved_at === null).length, [reports]);
+
 
   const paidFee = useMemo(
     () => reports.filter((r) => r.instructor_fee_paid_at && (r.instructor_fee ?? 0) > 0)
@@ -316,39 +316,6 @@ export default function LeaderDashboard() {
               </div>
             )}
           </div>
-
-        {/* 처리 필요 항목 */}
-        {(pendingMatches.length > 0 || pendingApprovalCount > 0) && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">처리 필요 항목</h4>
-            {pendingMatches.length > 0 && (
-              <button
-                onClick={() => router.push("/dashboard/leader/matches")}
-                className="w-full flex items-center gap-3 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-left hover:bg-amber-100 transition-colors"
-              >
-                <span className="w-7 h-7 bg-amber-400 rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0">{pendingMatches.length}</span>
-                <div>
-                  <p className="text-xs font-bold text-amber-800">수락 대기 중인 매칭 요청</p>
-                  <p className="text-[11px] text-amber-600">수락 또는 거절을 선택해 주세요</p>
-                </div>
-                <span className="ml-auto text-amber-500 text-xs">→</span>
-              </button>
-            )}
-            {pendingApprovalCount > 0 && (
-              <button
-                onClick={() => router.push("/dashboard/leader/lectures")}
-                className="w-full flex items-center gap-3 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-left hover:bg-gray-100 transition-colors"
-              >
-                <span className="w-7 h-7 bg-gray-400 rounded-lg flex items-center justify-center text-white text-xs font-black flex-shrink-0">{pendingApprovalCount}</span>
-                <div>
-                  <p className="text-xs font-bold text-gray-700">관리자 승인 대기 중인 보고서</p>
-                  <p className="text-[11px] text-gray-500">승인 완료 후 정산이 진행됩니다</p>
-                </div>
-                <span className="ml-auto text-gray-400 text-xs">→</span>
-              </button>
-            )}
-          </div>
-        )}
 
         {/* 포트폴리오 진입 */}
         <button

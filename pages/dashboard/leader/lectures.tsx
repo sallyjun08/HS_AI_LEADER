@@ -64,7 +64,8 @@ type MatchRequest = {
   client: { name: string } | null;
 };
 
-type FilterType     = "all" | "active" | "awaiting_client" | "awaiting_admin" | "completed";
+type FilterType     = "all" | "active" | "awaiting_client" | "awaiting_admin";
+type MainTab        = "ongoing" | "completed";
 type TypeFilterType = "all" | LectureType;
 
 type Report = {
@@ -96,7 +97,6 @@ const STAGE_OPTIONS: { value: FilterType; label: string; icon: string; bg: strin
   { value: "active",          label: "강의 진행 중",    icon: "▶️", bg: "bg-green-50",  border: "border-green-300",  text: "text-green-700"  },
   { value: "awaiting_client", label: "수요처 평가 대기", icon: "🕐", bg: "bg-sky-50",    border: "border-sky-300",    text: "text-sky-700"    },
   { value: "awaiting_admin",  label: "운영자 승인 대기", icon: "⏳", bg: "bg-amber-50",  border: "border-amber-300",  text: "text-amber-700"  },
-  { value: "completed",       label: "완료",            icon: "✅", bg: "bg-teal-50",   border: "border-teal-300",   text: "text-teal-700"   },
 ];
 
 const TYPE_OPTIONS: { value: TypeFilterType; label: string }[] = [
@@ -196,6 +196,7 @@ export default function LeaderLecturesPage() {
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [expandedReport, setExpandedReport]     = useState<string | null>(null);
   const [toast, setToast]                   = useState<{ msg: string; ok: boolean } | null>(null);
+  const [mainTab, setMainTab]       = useState<MainTab>("ongoing");
   const [filter, setFilter]         = useState<FilterType>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilterType>("all");
 
@@ -260,26 +261,21 @@ export default function LeaderLecturesPage() {
   }, [ongoingMatches, reportsByMatch]);
 
   const stageCounts: Record<FilterType, number> = {
-    all:             ongoingMatches.length + completedMatches.length,
+    all:             ongoingMatches.length,
     active:          ongoingMatches.length - matchStages.awaitingClientIds.size - matchStages.awaitingAdminIds.size,
     awaiting_client: matchStages.awaitingClientIds.size,
     awaiting_admin:  matchStages.awaitingAdminIds.size,
-    completed:       completedMatches.length,
   };
 
   const filteredOngoing = useMemo(() => {
     let list = ongoingMatches;
-    if (filter === "active")          list = list.filter((m) => !matchStages.awaitingClientIds.has(m.id) && !matchStages.awaitingAdminIds.has(m.id));
+    if (filter === "active")               list = list.filter((m) => !matchStages.awaitingClientIds.has(m.id) && !matchStages.awaitingAdminIds.has(m.id));
     else if (filter === "awaiting_client") list = list.filter((m) => matchStages.awaitingClientIds.has(m.id));
     else if (filter === "awaiting_admin")  list = list.filter((m) => matchStages.awaitingAdminIds.has(m.id));
-    else if (filter === "completed")  list = [];
     return byType(list);
   }, [filter, typeFilter, ongoingMatches, matchStages]);
 
-  const filteredCompleted = useMemo(() => {
-    const list = (filter === "all" || filter === "completed") ? completedMatches : [];
-    return byType(list);
-  }, [filter, typeFilter, completedMatches]);
+  const filteredCompleted = useMemo(() => byType(completedMatches), [typeFilter, completedMatches]);
 
   if (loading || !user) {
     return (
@@ -294,33 +290,59 @@ export default function LeaderLecturesPage() {
       <Head><title>내 강의 | 화성 AI 시민리더 잇다</title></Head>
       <DashboardLayout pageTitle="내 강의">
 
-        {/* 단계별 필터 */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
-          {/* 전체 */}
+        {/* 메인 탭 */}
+        <div className="flex gap-2">
           <button
-            onClick={() => setFilter("all")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${
-              filter === "all"
-                ? "bg-gray-100 border-gray-300 text-gray-700"
-                : "bg-white border-gray-100 text-gray-400 hover:border-gray-200"
+            onClick={() => setMainTab("ongoing")}
+            className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold border-2 transition-all flex-1 justify-center ${
+              mainTab === "ongoing"
+                ? "bg-hwaseong-blue text-white border-hwaseong-blue shadow-sm shadow-hwaseong-blue/20"
+                : "bg-white text-gray-500 border-gray-100 hover:border-hwaseong-blue/30 hover:text-hwaseong-blue"
             }`}
           >
-            <span>📋</span>
-            <span>전체</span>
-            <span className={`font-black ${filter === "all" ? "text-gray-700" : "text-gray-400"}`}>
-              {stageCounts.all}
+            <span>▶️</span>
+            <span>진행중인 강의</span>
+            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${mainTab === "ongoing" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>
+              {ongoingMatches.length}
             </span>
           </button>
+          <button
+            onClick={() => { setMainTab("completed"); setFilter("all"); }}
+            className={`flex items-center gap-2 px-5 py-3 rounded-2xl text-sm font-bold border-2 transition-all flex-1 justify-center ${
+              mainTab === "completed"
+                ? "bg-teal-600 text-white border-teal-600 shadow-sm shadow-teal-600/20"
+                : "bg-white text-gray-500 border-gray-100 hover:border-teal-400/40 hover:text-teal-700"
+            }`}
+          >
+            <span>✅</span>
+            <span>완료된 강의</span>
+            <span className={`text-xs font-black px-2 py-0.5 rounded-full ${mainTab === "completed" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"}`}>
+              {completedMatches.length}
+            </span>
+          </button>
+        </div>
 
-          {/* 진행 파이프라인 */}
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 mb-2 tracking-wide uppercase">진행 단계</p>
+        {/* 진행 단계 서브 필터 (진행중 탭에서만) */}
+        {mainTab === "ongoing" && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-3 space-y-2">
             <div className="flex items-center gap-1 flex-wrap">
+              <button
+                onClick={() => setFilter("all")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${
+                  filter === "all"
+                    ? "bg-gray-100 border-gray-300 text-gray-700"
+                    : "bg-white border-gray-100 text-gray-400 hover:border-gray-200"
+                }`}
+              >
+                <span>📋</span>
+                <span>전체</span>
+                <span className={`font-black ${filter === "all" ? "text-gray-700" : "text-gray-400"}`}>{stageCounts.all}</span>
+              </button>
               {STAGE_OPTIONS.map((f, i) => {
                 const isActive = filter === f.value;
                 return (
                   <div key={f.value} className="flex items-center gap-1">
-                    {i > 0 && <span className="text-gray-300 text-xs flex-shrink-0">→</span>}
+                    <span className="text-gray-300 text-xs flex-shrink-0">→</span>
                     <button
                       onClick={() => setFilter(f.value)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border-2 transition-all ${
@@ -331,21 +353,19 @@ export default function LeaderLecturesPage() {
                     >
                       <span>{f.icon}</span>
                       <span>{f.label}</span>
-                      <span className={`font-black ${isActive ? f.text : "text-gray-400"}`}>
-                        {stageCounts[f.value]}
-                      </span>
+                      <span className={`font-black ${isActive ? f.text : "text-gray-400"}`}>{stageCounts[f.value]}</span>
                     </button>
                   </div>
                 );
               })}
             </div>
           </div>
-        </div>
+        )}
 
         {/* 강의 유형 필터 */}
         <div className="flex gap-2 flex-wrap">
           {TYPE_OPTIONS.map((opt) => {
-            const pool = filter === "completed" ? completedMatches : filter !== "all" ? filteredOngoing : [...ongoingMatches, ...completedMatches];
+            const pool = mainTab === "completed" ? completedMatches : filteredOngoing;
             const count = opt.value === "all" ? pool.length : pool.filter((m) => m.lecture_type === opt.value).length;
             const active = typeFilter === opt.value;
             const typeColor =
@@ -370,10 +390,10 @@ export default function LeaderLecturesPage() {
           })}
         </div>
 
-        {/* 진행 중 */}
-        {filteredOngoing.length > 0 && (
+        {/* 진행중인 강의 */}
+        {mainTab === "ongoing" && filteredOngoing.length > 0 && (
           <section className="space-y-3">
-            <SectionHeader label="진행 중" icon="▶️" colorKey="green" count={filteredOngoing.length} />
+            <SectionHeader label="진행중인 강의" icon="▶️" colorKey="green" count={filteredOngoing.length} />
             {filteredOngoing.map((m) => {
               const detail          = scheduleMatches.find((s) => s.id === m.id);
               const expanded        = expandedSchedule === m.id;
@@ -636,10 +656,10 @@ export default function LeaderLecturesPage() {
           </section>
         )}
 
-        {/* 완료됨 */}
-        {filteredCompleted.length > 0 && (
+        {/* 완료된 강의 */}
+        {mainTab === "completed" && filteredCompleted.length > 0 && (
           <section className="space-y-3">
-            <SectionHeader label="완료됨" icon="✅" colorKey="gray" count={filteredCompleted.length} />
+            <SectionHeader label="완료된 강의" icon="✅" colorKey="gray" count={filteredCompleted.length} />
             {filteredCompleted.map((m) => {
               const reports  = reportsByMatch.get(m.id) ?? [];
               const isOpen   = expandedReport === m.id;
@@ -703,14 +723,20 @@ export default function LeaderLecturesPage() {
           </section>
         )}
 
-        {filteredOngoing.length === 0 && filteredCompleted.length === 0 && (
+        {mainTab === "ongoing" && filteredOngoing.length === 0 && (
           <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 text-gray-400">
             <p className="text-4xl mb-3">📭</p>
             <p className="text-sm">
               {filter === "all"
-                ? "진행 중이거나 완료된 강의가 없습니다."
+                ? "진행 중인 강의가 없습니다."
                 : `'${STAGE_OPTIONS.find((f) => f.value === filter)?.label ?? filter}' 강의가 없습니다.`}
             </p>
+          </div>
+        )}
+        {mainTab === "completed" && filteredCompleted.length === 0 && (
+          <div className="bg-white rounded-2xl p-10 text-center border border-gray-100 text-gray-400">
+            <p className="text-4xl mb-3">🎓</p>
+            <p className="text-sm">완료된 강의가 없습니다.</p>
           </div>
         )}
 

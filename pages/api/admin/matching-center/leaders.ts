@@ -18,7 +18,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       .select(`
         id, is_verified, is_active,
         specialties, available_regions, available_times,
-        bio, rating_avg, total_lectures, response_rate, max_classes_month,
+        bio, rating_avg, total_lectures, response_rate, max_classes_month, cert_level,
         profiles!leader_profiles_user_id_fkey(name, email)
       `)
       .eq("is_verified", true)
@@ -71,6 +71,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     maxClassesMonth:      Number(l.max_classes_month) || 10,
     currentMonthLectures: monthlyCount[l.id]         ?? 0,
     lastLectureDate:      lastLectureDate[l.id]      ?? null,
+    certLevel:            l.cert_level               ?? null,
   }));
 
   return res.status(200).json(rows);

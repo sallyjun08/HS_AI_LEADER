@@ -61,6 +61,7 @@ type MatchingLeader = {
   maxClassesMonth: number;
   currentMonthLectures: number;
   lastLectureDate: string | null;
+  certLevel: number | null;
 };
 
 type ScoredLeader = MatchingLeader & {
@@ -130,11 +131,14 @@ function calcScores(leader: MatchingLeader, req: MatchingRequest): ScoredLeader 
       maxClassesMonth:      leader.maxClassesMonth,
       currentMonthLectures: leader.currentMonthLectures,
       lastLectureDate:      leader.lastLectureDate,
+      certLevel:            leader.certLevel,
     },
     {
-      address:   req.address,
-      category:  req.category,
-      startDate: req.start_date,
+      address:         req.address,
+      category:        req.category,
+      startDate:       req.start_date,
+      institutionType: req.institution_type,
+      frequency:       req.frequency,
     }
   );
   return {
@@ -916,11 +920,13 @@ function LeaderCard({
           {/* 매칭 점수 + 권역 모드 */}
           <div className="text-right flex-shrink-0">
             <div className="flex items-center gap-1.5 justify-end">
-              {leader.matchMode !== "전체" && (
+              {leader.matchMode !== "정상" && (
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                  leader.matchMode === "정확"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-amber-100 text-amber-700"
+                  leader.matchMode === "인접권역추천"
+                    ? "bg-amber-100 text-amber-700"
+                    : leader.matchMode === "유사분야확장"
+                    ? "bg-blue-100 text-blue-700"
+                    : "bg-gray-100 text-gray-500"
                 }`}>
                   {leader.matchMode}
                 </span>

@@ -223,12 +223,7 @@ export default function AdminDashboard() {
             <p className="text-gray-300 text-sm">화성특례시 AI 잇다 · 관리자</p>
           </div>
           <div className="flex items-center gap-2">
-            {pendingRequests.length > 0 && (
-              <span className="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full">
-                매칭 대기 {pendingRequests.length}건
-              </span>
-            )}
-            {rejectedRequests.length > 0 && (
+{rejectedRequests.length > 0 && (
               <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">
                 거절 {rejectedRequests.length}건
               </span>

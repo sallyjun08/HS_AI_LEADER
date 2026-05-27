@@ -82,6 +82,8 @@ type Report = {
   client_rejected_at: string | null;
   client_rejection_reason: string | null;
   client_approved_at: string | null;
+  instructor_fee: number | null;
+  instructor_fee_paid_at: string | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -641,13 +643,32 @@ export default function LeaderLecturesPage() {
             {filteredCompleted.map((m) => {
               const reports  = reportsByMatch.get(m.id) ?? [];
               const isOpen   = expandedReport === m.id;
+              const feePaid    = reports.some((r) => r.instructor_fee_paid_at);
+              const feeApproved = !feePaid && reports.some((r) => r.admin_approved_at);
+              const feeAmount  = reports.find((r) => r.instructor_fee != null)?.instructor_fee ?? null;
               return (
                 <div key={m.id}>
                   <MatchCard
                     match={m}
                     muted
                     extra={
-                      <div className="mt-3 pt-2.5 border-t border-gray-100">
+                      <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-2">
+                        {/* 정산 상태 */}
+                        <div className="flex items-center justify-between gap-2">
+                          {feePaid ? (
+                            <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                              💰 정산 완료{feeAmount ? ` · ${feeAmount.toLocaleString()}원` : ""}
+                            </span>
+                          ) : feeApproved ? (
+                            <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl">
+                              ⏳ 정산 대기{feeAmount ? ` · ${feeAmount.toLocaleString()}원` : ""}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-[11px] text-gray-400 bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-xl">
+                              💳 정산 미확정
+                            </span>
+                          )}
+                        </div>
                         <button
                           onClick={() => setExpandedReport(isOpen ? null : m.id)}
                           className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border w-full justify-between transition-colors ${
@@ -969,7 +990,7 @@ function ReportDetailPanel({
       )}
 
       {/* 헤더: 상태 + 제출일 */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
           r.client_rejected_at
             ? "bg-red-100 text-red-700"
@@ -979,6 +1000,17 @@ function ReportDetailPanel({
         }`}>
           {r.client_rejected_at ? "↩ 반려됨" : r.admin_approved_at ? "✓ 승인완료" : "⏳ 승인대기"}
         </span>
+        {r.admin_approved_at && (
+          r.instructor_fee_paid_at ? (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
+              💰 정산완료{r.instructor_fee ? ` · ${r.instructor_fee.toLocaleString()}원` : ""}
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+              ⏳ 정산대기{r.instructor_fee ? ` · ${r.instructor_fee.toLocaleString()}원` : ""}
+            </span>
+          )
+        )}
         <span className="text-[10px] text-gray-400">
           제출 {new Date(r.submitted_at).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
         </span>

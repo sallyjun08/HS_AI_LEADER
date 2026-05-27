@@ -455,8 +455,8 @@ function MatchCard({
 }: {
   match: MatchRequest;
   actionInProgress: string | null;
-  onAccept: () => void;
-  onReject: () => void;
+  onAccept?: () => void;
+  onReject?: () => void;
   showAcceptReject?: boolean;
   muted?: boolean;
   extra?: React.ReactNode;
@@ -551,14 +551,14 @@ function MatchCard({
 }
 
 function DeadlineCountdown({ matchedAt }: { matchedAt: string }) {
-  const deadline = new Date(new Date(matchedAt).getTime() + 24 * 60 * 60 * 1000);
+  const deadlineMs = new Date(matchedAt).getTime() + 24 * 60 * 60 * 1000;
 
-  const [remaining, setRemaining] = useState(() => deadline.getTime() - Date.now());
+  const [remaining, setRemaining] = useState(() => deadlineMs - Date.now());
 
   useEffect(() => {
-    const id = setInterval(() => setRemaining(deadline.getTime() - Date.now()), 1000);
+    const id = setInterval(() => setRemaining(deadlineMs - Date.now()), 1000);
     return () => clearInterval(id);
-  }, [deadline.getTime()]);
+  }, [deadlineMs]);
 
   if (remaining <= 0) {
     return (
@@ -590,8 +590,8 @@ function DeadlineCountdown({ matchedAt }: { matchedAt: string }) {
         <span className="text-xs">{colors.icon}</span>
         <span className={`text-[11px] font-semibold ${colors.label}`}>수락 마감</span>
         <span className={`text-[10px] ${colors.label}`}>
-          {deadline.toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}{" "}
-          {deadline.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+          {new Date(deadlineMs).toLocaleDateString("ko-KR", { month: "long", day: "numeric" })}{" "}
+          {new Date(deadlineMs).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>
       <span className={`text-sm font-black tabular-nums ${colors.text} ${isUrgent ? "animate-pulse" : ""}`}>

@@ -146,29 +146,39 @@ export default function RegisterPage() {
   async function uploadCertImage(): Promise<string | null> {
     if (!certFile) return null;
     setCertUploadStatus("uploading");
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const base64 = (ev.target?.result as string).split(",")[1];
-        const res = await fetch("/api/auth/upload-cert", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: certFile.name, mimeType: certFile.type, data: base64 }),
-        });
-        if (res.ok) {
-          const { url } = await res.json();
-          setCertImageUrl(url);
-          setCertUploadStatus("done");
-          resolve(url);
-        } else {
-          const body = await res.json().catch(() => ({}));
-          console.error("[upload-cert]", res.status, body?.error);
-          setCertUploadStatus("error");
-          resolve(null);
-        }
-      };
-      reader.readAsDataURL(certFile);
-    });
+    try {
+      const urlRes = await fetch("/api/auth/cert-upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: certFile.name, mimeType: certFile.type }),
+      });
+      if (!urlRes.ok) {
+        const body = await urlRes.json().catch(() => ({}));
+        console.error("[upload-cert] url error:", body?.error);
+        setCertUploadStatus("error");
+        return null;
+      }
+      const { signedUrl, publicUrl } = await urlRes.json();
+
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": certFile.type },
+        body: certFile,
+      });
+      if (!uploadRes.ok) {
+        console.error("[upload-cert] upload error:", uploadRes.status);
+        setCertUploadStatus("error");
+        return null;
+      }
+
+      setCertImageUrl(publicUrl);
+      setCertUploadStatus("done");
+      return publicUrl;
+    } catch (err) {
+      console.error("[upload-cert]", err);
+      setCertUploadStatus("error");
+      return null;
+    }
   }
 
   async function handleSubmit(e: FormEvent) {

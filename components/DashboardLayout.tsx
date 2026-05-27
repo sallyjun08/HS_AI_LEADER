@@ -35,7 +35,7 @@ const ROLE_META: Record<UserRole, { label: string; badge: string; badgeStyle: st
   admin:  { label: "화성시 관리자", badge: "관리자", badgeStyle: "bg-gray-100 text-gray-700",     avatarBg: "from-gray-700 to-gray-900" },
 };
 
-type AdminAlerts = { reviewing: number; pending: number; rejected: number; unverified: number };
+type AdminAlerts = { reviewing: number; pending: number; rejected: number; unverified: number; settlementPending: number };
 
 interface Props { pageTitle: string; children: React.ReactNode }
 
@@ -45,21 +45,23 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentHash, setCurrentHash] = useState("");
 
-  const [adminAlerts, setAdminAlerts] = useState<AdminAlerts>({ reviewing: 0, pending: 0, rejected: 0, unverified: 0 });
+  const [adminAlerts, setAdminAlerts] = useState<AdminAlerts>({ reviewing: 0, pending: 0, rejected: 0, unverified: 0, settlementPending: 0 });
   const [leaderOngoing, setLeaderOngoing] = useState(0);
 
   const fetchAdminAlerts = useCallback(async () => {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const [reqs, leaders]: [any[], any[]] = await Promise.all([
+      const [reqs, leaders, settlements]: [any[], any[], any[]] = await Promise.all([
         fetch("/api/match-requests").then((r) => r.json()),
         fetch("/api/admin/leaders/list").then((r) => r.json()),
+        fetch("/api/admin/settlement/reports").then((r) => r.json()).catch(() => []),
       ]);
       setAdminAlerts({
-        reviewing:  Array.isArray(reqs)    ? reqs.filter((r) => r.status === "pending" && r.is_approved === false).length : 0,
-        pending:    Array.isArray(reqs)    ? reqs.filter((r) => r.status === "pending" && r.is_approved === true).length : 0,
-        rejected:   Array.isArray(reqs)    ? reqs.filter((r) => r.status === "rejected").length : 0,
-        unverified: Array.isArray(leaders) ? leaders.filter((l) => !l.isVerified).length : 0,
+        reviewing:         Array.isArray(reqs)        ? reqs.filter((r) => r.status === "pending" && r.is_approved === false).length : 0,
+        pending:           Array.isArray(reqs)        ? reqs.filter((r) => r.status === "pending" && r.is_approved === true).length : 0,
+        rejected:          Array.isArray(reqs)        ? reqs.filter((r) => r.status === "rejected").length : 0,
+        unverified:        Array.isArray(leaders)     ? leaders.filter((l) => !l.isVerified).length : 0,
+        settlementPending: Array.isArray(settlements) ? settlements.filter((r) => !r.admin_approved_at && !r.client_rejected_at && r.rating_from_client !== null).length : 0,
       });
     } catch {}
   }, []);
@@ -113,7 +115,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const meta = ROLE_META[role];
   const initial = userName.charAt(0);
 
-  const totalAlerts = adminAlerts.reviewing + adminAlerts.pending + adminAlerts.rejected + adminAlerts.unverified;
+  const totalAlerts = adminAlerts.reviewing + adminAlerts.pending + adminAlerts.rejected + adminAlerts.unverified + adminAlerts.settlementPending;
 
   function navBadge(href: string): number {
     if (role === "leader" && href === "/dashboard/leader/lectures") return leaderOngoing;
@@ -121,6 +123,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
     if (href === "/admin/leaders")         return adminAlerts.unverified;
     if (href === "/admin/review")          return adminAlerts.reviewing;
     if (href === "/admin/matching-center") return adminAlerts.pending + adminAlerts.rejected;
+    if (href === "/admin/settlement")      return adminAlerts.settlementPending;
     return 0;
   }
 

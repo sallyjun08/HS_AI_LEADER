@@ -13,6 +13,7 @@ const DAY_LABELS: Record<string, string> = {
   mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
 };
 
+
 type MatchingRequest = {
   id: string;
   title: string;
@@ -77,9 +78,6 @@ type ScoredLeader = MatchingLeader & {
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
-const DAY_MAP: Record<string, string> = {
-  mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일",
-};
 
 const FREQ_LABELS: Record<string, string> = { single: "1회성", regular: "정기" };
 const LOC_LABELS:  Record<string, string> = { offline: "대면", online: "온라인", hybrid: "혼합" };
@@ -93,7 +91,7 @@ function fmtDate(iso: string) {
 function fmtAvailTimes(times: Record<string, unknown> | null): string {
   if (!times) return "—";
   const days = (Array.isArray(times.weekdays) ? (times.weekdays as string[]) : [])
-    .map((d) => DAY_MAP[d] ?? d);
+    .map((d) => DAY_LABELS[d] ?? d);
   const slots = Array.isArray(times.time_slots) ? (times.time_slots as string[])[0] : null;
   const parts = [days.length > 0 ? days.join("·") : null, slots].filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : "—";
@@ -175,6 +173,7 @@ export default function MatchingCenter() {
   const [cancelReason,   setCancelReason]   = useState("");
   const [cancelling,     setCancelling]     = useState(false);
   const [unmatching,     setUnmatching]     = useState<string | null>(null);
+  const [, setTick] = useState(0);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
@@ -215,6 +214,11 @@ export default function MatchingCenter() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [user]);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // ── 파생 상태 ────────────────────────────────────────────────────────────
 
@@ -934,7 +938,7 @@ function LeaderCard({
           <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${scoreColor(leader.matchScore)}`}
-              style={{ width: `${Math.min(Math.round(leader.matchScore / 100 * 100), 100)}%` }}
+              style={{ width: `${Math.min(leader.matchScore, 100)}%` }}
             />
           </div>
           {isSelected && (

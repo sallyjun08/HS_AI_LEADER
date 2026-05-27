@@ -284,7 +284,7 @@ function ExportDropdown({ onPDF, onCSV }: { onPDF: () => void; onCSV: () => void
 // ─── 인라인 금액 편집 셀 ───────────────────────────────────────────────────
 
 function FeeCell({
-  id, fee, suggestedFee, hintText, editing, onStartEdit, onSave, onCancel, saving,
+  id, fee, suggestedFee, hintText, editing, onStartEdit, onChangeFee, onSave, onCancel, saving,
 }: {
   id: string;
   fee: number;
@@ -292,6 +292,7 @@ function FeeCell({
   hintText?: string;
   editing: { id: string; fee: string } | null;
   onStartEdit: (id: string, fee: number) => void;
+  onChangeFee: (fee: string) => void;
   onSave: (id: string, fee: string) => void;
   onCancel: () => void;
   saving: boolean;
@@ -303,7 +304,7 @@ function FeeCell({
           <input
             type="number" min="0" step="1000"
             value={editing.fee}
-            onChange={(e) => onStartEdit(id, Number(e.target.value))}
+            onChange={(e) => onChangeFee(e.target.value)}
             className="w-24 px-2 py-1 border border-hwaseong-blue rounded-lg text-xs text-right focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30"
             autoFocus
             onKeyDown={(e) => {
@@ -569,7 +570,7 @@ export default function SettlementPage() {
       .sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? "")),
   [rentalFees]);
 
-  const rUnpaidCount = useMemo(() => rentalFees.filter((r) => r.rental_fee_paid_at === null).length, [rentalFees]);
+  const rUnpaidCount = unpaidRFees.length;
   const rUnpaidTotal = useMemo(() => rentalFees.filter((r) => !r.rental_fee_paid_at).reduce((s, r) => s + r.rental_fee_total, 0), [rentalFees]);
   const rPaidTotal   = useMemo(() => rentalFees.filter((r) => r.rental_fee_paid_at).reduce((s, r) => s + r.rental_fee_total, 0), [rentalFees]);
 
@@ -1224,6 +1225,7 @@ export default function SettlementPage() {
                                 hintText={hint}
                                 editing={editingIFee}
                                 onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
+                                onChangeFee={(fee) => setEditingIFee((prev) => prev ? { ...prev, fee } : null)}
                                 onSave={saveIFee} onCancel={() => setEditingIFee(null)}
                                 saving={iFeeSaving}
                               />
@@ -1410,6 +1412,7 @@ export default function SettlementPage() {
                                 hintText={r.suggested_fee > 0 ? `${r.session_count}회 × ${r.lecture_hours}시간 일괄 = ${fmtWon(r.suggested_fee)}` : undefined}
                                 editing={editingRFee}
                                 onStartEdit={(id, fee) => setEditingRFee({ id, fee: String(fee) })}
+                                onChangeFee={(fee) => setEditingRFee((prev) => prev ? { ...prev, fee } : null)}
                                 onSave={saveRFee} onCancel={() => setEditingRFee(null)}
                                 saving={rFeeSaving}
                               />

@@ -340,9 +340,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
 
   // ── 5. 장기정기형 진행 중 — 박봉담 8회 중 3회 제출, 각기 다른 상태 ──────────
   // 보고서 흐름 커버리지:
-  //   session 0: 수요처 평가 완료 → 운영자 최종 승인 완료 (강사료 지급완료)
-  //   session 1: 수요처 평가 완료 → 운영자 최종 승인 대기 (ready)
-  //   session 2: 보고서 제출됨   → 수요처 평가 대기 (client_pending)
+  //   session 0: 수요처 개별 승인 완료 (client_approved_at) → "수요처 승인" 뱃지
+  //   session 1: 수요처 개별 승인 완료 (client_approved_at) → "수요처 승인" 뱃지
+  //   session 2: 보고서 제출됨 → 수요처 평가 대기 ("평가 대기" 필터에 노출)
   const bondam = leaderMap.get("박봉담")!;
 
   const longtermSessions = Array.from({ length: 8 }, (_, i) => {
@@ -377,23 +377,19 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
 
   if (longtermErr || !longtermMr) return res.status(500).json({ error: `박봉담 longterm 요청 실패: ${longtermErr?.message}` });
 
-  // session 0: 운영자 승인 완료 (지급완료)
+  // session 0: 수요처 개별 승인 완료 → "수요처 승인" 뱃지
   await supabaseAdmin.from("activity_reports").insert({
-    match_id:               longtermMr.id,
-    instructor_id:          bondam.leaderId,
-    session_index:          0,
-    lecture_date:           longtermSessions[0].date,
-    attendance_count:       18,
-    report_text:            "1회차: AI 기초 개념 및 생성형 AI 소개\n- ChatGPT·Gemini 등 주요 서비스 실습\n- 업무 자동화 가능성 토의\n- 참가자 대부분 처음 접하는 내용이었으나 집중도 높았음",
-    image_urls:             [],
-    rating_from_client:     4.5,
-    client_feedback:        "기대 이상으로 유익했습니다.",
-    admin_approved_at:      adminApprovedAt,
-    instructor_fee:         70000,
-    instructor_fee_paid_at: adminApprovedAt,
+    match_id:           longtermMr.id,
+    instructor_id:      bondam.leaderId,
+    session_index:      0,
+    lecture_date:       longtermSessions[0].date,
+    attendance_count:   18,
+    report_text:        "1회차: AI 기초 개념 및 생성형 AI 소개\n- ChatGPT·Gemini 등 주요 서비스 실습\n- 업무 자동화 가능성 토의\n- 참가자 대부분 처음 접하는 내용이었으나 집중도 높았음",
+    image_urls:         [],
+    client_approved_at: daysAgoTs(16),
   });
 
-  // session 1: 운영자 최종 승인 대기 (ready)
+  // session 1: 수요처 개별 승인 완료 → "수요처 승인" 뱃지
   await supabaseAdmin.from("activity_reports").insert({
     match_id:           longtermMr.id,
     instructor_id:      bondam.leaderId,
@@ -402,11 +398,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     attendance_count:   17,
     report_text:        "2회차: 프롬프트 엔지니어링 기초\n- 효과적인 프롬프트 작성법 실습\n- 보고서·이메일 초안 자동화 실습\n- 참가자 만족도 높음, 업무 적용 사례 다수 공유됨",
     image_urls:         [],
-    rating_from_client: 4.2,
-    client_feedback:    "실무 적용 방법을 자세히 알려주셔서 좋았습니다.",
+    client_approved_at: daysAgoTs(9),
   });
 
-  // session 2: 수요처 평가 대기 (client_pending)
+  // session 2: 수요처 평가 대기 → "평가 대기" 필터 노출
   await supabaseAdmin.from("activity_reports").insert({
     match_id:         longtermMr.id,
     instructor_id:    bondam.leaderId,
@@ -415,10 +410,71 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     attendance_count: 18,
     report_text:      "3회차: AI를 활용한 데이터 분석 입문\n- 엑셀 데이터 AI 분석 실습\n- 차트 자동 생성 및 해석 실습\n- 일부 참가자 엑셀 기초 부족으로 추가 설명 진행",
     image_urls:       [],
-    // rating_from_client: null → 수요처 평가 대기
+    // client_approved_at: null → 수요처 평가 대기
   });
 
   // ── 6. 완료 강의 — 보고서 흐름 4가지 상태 전부 커버 ──────────────────────
+  // 6a-pre. 박봉담 장기정기형 4회 완료 — 탭 분리·중간 회차 "수요처 승인" 뱃지·정산대기 확인용
+  //   session 0-2: client_approved_at (중간 회차 개별 승인) → "수요처 승인" 뱃지
+  //   session 3  : rating + admin_approved_at              → "승인완료" 뱃지, 정산대기
+  //   reportByMatchId: session_index 최대값(3)이 선택 → ReportReviewBlock에 최종 보고서 표시
+  const completedLongtermDates = Array.from({ length: 4 }, (_, i) => daysAgo(40 - i * 7));
+  const { data: completedLongtermMr } = await supabaseAdmin
+    .from("match_requests")
+    .insert({
+      client_id:        clientUserId,
+      leader_id:        bondam.leaderId,
+      title:            "봉담 기업 AI 입문 교육 (장기정기형 완료·정산대기)",
+      category:         "업무 자동화",
+      address:          "봉담",
+      start_date:       completedLongtermDates[0],
+      end_date:         completedLongtermDates[3],
+      lecture_type:     "longterm",
+      session_count:    4,
+      lecture_hours:    2,
+      lecture_times:    completedLongtermDates.map((d) => ({
+        date: d, day: dayOfWeek(d), startTime: "10:00", endTime: "12:00",
+      })),
+      target_audience:  ["성인"],
+      participant_count: 12,
+      location_type:    "offline",
+      status:           "completed",
+      is_approved:      true,
+    })
+    .select("id")
+    .single();
+
+  if (completedLongtermMr) {
+    // 중간 회차(0-2): 수요처 개별 승인
+    for (let i = 0; i < 3; i++) {
+      await supabaseAdmin.from("activity_reports").insert({
+        match_id:           completedLongtermMr.id,
+        instructor_id:      bondam.leaderId,
+        session_index:      i,
+        lecture_date:       completedLongtermDates[i],
+        attendance_count:   12,
+        report_text:        `${i + 1}회차: 업무 자동화 실습 과정 완료\n- 주요 AI 도구 활용법 실습\n- 실무 사례 중심 진행`,
+        image_urls:         [],
+        client_approved_at: daysAgoTs(35 - i * 7),
+      });
+    }
+    // 최종 회차(3): 평가 완료 + 운영자 승인 (정산대기 — instructor_fee_paid_at 없음)
+    await supabaseAdmin.from("activity_reports").insert({
+      match_id:           completedLongtermMr.id,
+      instructor_id:      bondam.leaderId,
+      session_index:      3,
+      lecture_date:       completedLongtermDates[3],
+      attendance_count:   12,
+      report_text:        "4회차(최종): 전체 과정 마무리 및 실무 적용 워크숍\n- 4주 과정 총 복습 및 질의응답\n- 수강생 전원 자체 프롬프트 설계 발표 완료",
+      image_urls:         [],
+      rating_from_client: 4.5,
+      client_feedback:    "업무에 바로 적용 가능한 실용적인 내용이었습니다. 다음 심화 과정도 신청하고 싶습니다.",
+      admin_approved_at:  adminApprovedAt,
+      instructor_fee:     240000,   // 4회 × 2시간 × 30,000
+      // instructor_fee_paid_at: null → 정산대기 (완료 탭에서 선명하게 표시)
+    });
+  }
+
 
   // ─ 6a. 김동탄 intensive 4일 ─────────────────────────────────────────────
   // 상태: 운영자 승인 완료 | 반려이력 1회 있음 | 강사료 지급완료
@@ -901,15 +957,16 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       client:  { name: CLIENT.name, email: CLIENT.email, password: "Test1234!" },
     },
     report_flow_coverage: {
-      "✅ 승인완료":        "김동탄(intensive, 반려이력1회) · 박봉담 1회차 · 정화성 i0-3 · 동탄/도서관 대여",
-      "⏳ 최종승인대기":    "이향남 oneday · 박봉담 2회차 · 정화성 i4(반려이력1회) i5",
-      "↩ 수요처반려중":    "최우정 oneday · 정화성 i6",
-      "🕐 수요처평가대기":  "김동탄 oneday · 박봉담 3회차 · 정화성 i7",
+      "✅ 승인완료 (admin_approved_at)":      "김동탄 intensive(반려이력1회) · 봉담기업AI 최종회차(s3) · 정화성 i0-3 · 동탄/도서관 대여",
+      "🔵 수요처 승인 (client_approved_at)":  "박봉담 ONGOING s0·s1 · 봉담기업AI 중간회차 s0·s1·s2",
+      "⏳ 최종승인대기 (rating 있음)":         "이향남 oneday · 정화성 i4(반려이력1회) i5",
+      "↩ 수요처반려중":                       "최우정 oneday · 정화성 i6",
+      "🕐 수요처평가대기":                     "김동탄 oneday · 박봉담 ONGOING s2 · 정화성 i7",
     },
     settlement_summary: {
-      instructor_fees_approved: "강사료 정산 탭에 표시되는 건 (admin_approved_at 있는 것만)",
-      fee_paid:    "김동탄 집중코스 (320,000) · 박봉담 1회차 (70,000) · 정화성 i0,2 · 도서관 대여 (150,000)",
-      fee_unpaid:  "이향남 (60,000) · 정화성 i1,3 · 동탄 대여 (90,000)",
+      note:        "강사료 정산 탭: admin_approved_at 있는 건만 표시",
+      fee_paid:    "김동탄 intensive (320,000) · 정화성 i0,2 · 도서관 대여 (150,000)",
+      fee_unpaid:  "봉담기업AI 완료 (240,000·정산대기·card선명) · 이향남 (60,000) · 정화성 i1,3 · 동탄 대여 (90,000)",
     },
   });
 }

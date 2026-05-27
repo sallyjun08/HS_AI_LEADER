@@ -670,7 +670,7 @@ export default function LeaderLecturesPage() {
                 <div key={m.id}>
                   <MatchCard
                     match={m}
-                    muted
+                    muted={feePaid}
                     extra={
                       <div className="mt-3 pt-2.5 border-t border-gray-100 space-y-2">
                         {/* 정산 상태 */}

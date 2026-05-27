@@ -1022,9 +1022,17 @@ function ReportDetailPanel({
             ? "bg-red-100 text-red-700"
             : r.admin_approved_at
               ? "bg-green-100 text-green-700"
-              : "bg-amber-100 text-amber-700"
+              : (r.client_approved_at || r.rating_from_client !== null)
+                ? "bg-teal-100 text-teal-700"
+                : "bg-amber-100 text-amber-700"
         }`}>
-          {r.client_rejected_at ? "↩ 반려됨" : r.admin_approved_at ? "✓ 승인완료" : "⏳ 승인대기"}
+          {r.client_rejected_at
+            ? "↩ 반려됨"
+            : r.admin_approved_at
+              ? "✓ 승인완료"
+              : (r.client_approved_at || r.rating_from_client !== null)
+                ? "✓ 수요처 승인"
+                : "⏳ 승인대기"}
         </span>
         {r.admin_approved_at && (
           r.instructor_fee_paid_at ? (

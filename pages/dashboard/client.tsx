@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -77,6 +77,19 @@ const WEEKDAYS = [
   { key: "mon", label: "월" }, { key: "tue", label: "화" }, { key: "wed", label: "수" },
   { key: "thu", label: "목" }, { key: "fri", label: "금" }, { key: "sat", label: "토" }, { key: "sun", label: "일" },
 ];
+
+const WEEKDAY_TO_JS: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+
+function countWeekdaysInRange(startDate: string, endDate: string, days: string[]): number {
+  if (!startDate || !endDate || days.length === 0) return 0;
+  const dayNums = new Set(days.map((d) => WEEKDAY_TO_JS[d]));
+  const MS = 86_400_000;
+  let count = 0;
+  let cur = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  while (cur <= end) { if (dayNums.has(cur.getDay())) count++; cur = new Date(cur.getTime() + MS); }
+  return count;
+}
 
 function generateConsecutiveDates(
   startDate: string,
@@ -358,6 +371,19 @@ export default function ClientDashboard() {
     if (Array.isArray(reqs)) setRequests(reqs);
     if (Array.isArray(reps)) setReports(reps);
   }
+
+  // 장기정기형: 날짜 범위 + 요일 → 회차 자동 계산
+  const autoSessionCount = useMemo(() => {
+    if (form.lectureType !== "longterm") return null;
+    const count = countWeekdaysInRange(form.startDate, form.endDate, form.weekdaySlots.map((s) => s.day));
+    return count > 0 ? count : null;
+  }, [form.lectureType, form.startDate, form.endDate, form.weekdaySlots]);
+
+  useEffect(() => {
+    if (autoSessionCount !== null) {
+      setForm((p) => ({ ...p, sessionCount: String(autoSessionCount) }));
+    }
+  }, [autoSessionCount]);
 
   useEffect(() => {
     if (!user) return;
@@ -1477,6 +1503,11 @@ export default function ClientDashboard() {
                           onClick={() => setForm((p) => { const next = Number(p.sessionCount) + 1; return { ...p, sessionCount: String(next), sessionSlots: [...p.sessionSlots, { date: "", startTime: "" }] }; })}
                           className="w-9 h-9 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 text-lg font-bold hover:bg-gray-100">+</button>
                       </div>
+                      {autoSessionCount !== null && (
+                        <p className="text-[11px] text-purple-500 mt-1.5">
+                          📅 기간 내 선택 요일 기준 자동 계산 ({autoSessionCount}회) · 직접 수정 가능
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}

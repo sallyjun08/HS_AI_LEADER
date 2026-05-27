@@ -3,8 +3,8 @@ import Head from "next/head";
 import Link from "next/link";
 import { Sparkles, ShieldCheck, ClipboardList } from "lucide-react";
 import GNB from "@/components/GNB";
-import LiveCountBanner from "@/components/LiveCountBanner";
 import Footer from "@/components/Footer";
+import ActivityStats from "@/components/ActivityStats";
 import { useAuth, ROLE_REDIRECTS } from "@/lib/auth-context";
 
 /* ─── Hero slides ─────────────────────────────── */
@@ -115,27 +115,6 @@ export default function Landing() {
   const { user } = useAuth();
   const [slide, setSlide]     = useState(0);
   const [newsTab, setNewsTab] = useState<NewsTab>("all");
-
-  type PreviewLeader = {
-    id: string;
-    maskedName: string;
-    isVerified: boolean;
-    specialties: string[];
-    availableRegions: string[];
-    bio: string | null;
-    ratingAvg: number;
-    totalLectures: number;
-  };
-  const [previewLeaders, setPreviewLeaders] = useState<PreviewLeader[]>([]);
-
-  useEffect(() => {
-    fetch("/api/public/leaders?verified=true")
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) setPreviewLeaders(data.slice(0, 3));
-      })
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setSlide((s) => (s + 1) % HERO_SLIDES.length), 4500);
@@ -353,92 +332,9 @@ export default function Landing() {
       </section>
 
 
-{/* ══ LIVE COUNT ═══════════════════════════ */}
-      <LiveCountBanner />
 
-      {/* ══ 강사 찾기 ══════════════════════════ */}
-      <section id="instructors" className="bg-gray-50 py-24 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
-            <div>
-              <p className="text-hwaseong-skyblue text-sm font-semibold tracking-widest uppercase mb-3">
-                Find Instructors
-              </p>
-              <h2 className="text-4xl sm:text-5xl font-bold text-hwaseong-text tracking-tight">
-                강사 찾기
-              </h2>
-              <div className="w-12 h-1 bg-hwaseong-blue rounded-full mt-6" />
-            </div>
-            <Link
-              href="/instructors"
-              className="text-sm text-hwaseong-skyblue hover:underline font-medium flex-shrink-0"
-            >
-              강사 전체 보기 →
-            </Link>
-          </div>
-
-          {previewLeaders.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-              {previewLeaders.map((l) => (
-                <div key={l.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-xl bg-hwaseong-blue/10 flex items-center justify-center text-hwaseong-blue font-black text-lg flex-shrink-0">
-                        {l.maskedName[0]}
-                      </div>
-                      <div>
-                        <p className="font-bold text-hwaseong-text text-base leading-tight">{l.maskedName} 강사</p>
-                        {l.isVerified && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full mt-0.5">
-                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                            공식 인증
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-bold text-amber-500">⭐ {l.ratingAvg.toFixed(1)}</p>
-                      <p className="text-[10px] text-gray-400">{l.totalLectures}회 강의</p>
-                    </div>
-                  </div>
-                  {l.bio && (
-                    <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{l.bio}</p>
-                  )}
-                  {l.specialties.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {l.specialties.slice(0, 4).map((s) => (
-                        <span key={s} className="text-[10px] bg-hwaseong-blue/8 text-hwaseong-blue border border-hwaseong-blue/15 px-2 py-0.5 rounded-full font-medium">
-                          {s}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="bg-white rounded-2xl border border-gray-100 h-44 animate-pulse" />
-              ))}
-            </div>
-          )}
-
-          <div className="text-center">
-            <Link
-              href="/instructors"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-hwaseong-blue text-white font-semibold text-sm rounded-xl hover:bg-blue-900 transition-colors shadow-sm"
-            >
-              전체 강사 검색하기
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
-            </Link>
-          </div>
-        </div>
-      </section>
+      {/* ══ 활동 현황 ════════════════════════════ */}
+      <ActivityStats />
 
       {/* ══ 알림마당 (뉴스 보드) ════════════════ */}
       <section id="notice" className="bg-white py-24 px-4">

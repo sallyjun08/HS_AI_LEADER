@@ -4,56 +4,16 @@ import { useAuth, ROLE_REDIRECTS } from "@/lib/auth-context";
 import { useRouter } from "next/router";
 
 const NAV = [
-  {
-    label: "플랫폼 소개",
-    subs: [
-      { label: "소개 및 비전",  href: "#about" },
-      { label: "추진 경과",     href: "#about" },
-      { label: "운영 체계",     href: "#flow"  },
-    ],
-  },
-  {
-    label: "교육 프로그램",
-    subs: [
-      { label: "STEP 1 · AI 기초 소양", href: "#programs" },
-      { label: "STEP 2 · AI 시민 리더", href: "#programs" },
-      { label: "STEP 3 · 기업 맞춤형",  href: "#programs" },
-      { label: "강사 파견 신청",         href: "#dispatch"  },
-    ],
-  },
-  {
-    label: "강사 찾기",
-    subs: [
-      { label: "강사 명단",      href: "/instructors"          },
-      { label: "강사 포트폴리오", href: "/instructors"          },
-      { label: "파견 요청하기",   href: "/instructors#dispatch" },
-    ],
-  },
-  {
-    label: "활동 현황",
-    subs: [
-      { label: "교육 실적", href: "#stats" },
-      { label: "통계 현황", href: "#stats" },
-      { label: "성과 자료", href: "#stats" },
-    ],
-  },
-  {
-    label: "알림마당",
-    subs: [
-      { label: "공지사항", href: "#notice" },
-      { label: "교육 일정", href: "#notice" },
-      { label: "보도자료",  href: "#notice" },
-    ],
-  },
+  { label: "플랫폼 소개", href: "#about"  },
+  { label: "활동 현황",   href: "#stats"  },
+  { label: "알림마당",    href: "#notice" },
 ];
 
 export default function GNB() {
   const { user, signOut } = useAuth();
   const router = useRouter();
-  const [scrolled, setScrolled]         = useState(false);
-  const [mobileOpen, setMobileOpen]     = useState(false);
-  const [activeMenu, setActiveMenu]     = useState<string | null>(null);
-  const [openMobileSub, setOpenMobileSub] = useState<string | null>(null);
+  const [scrolled, setScrolled]     = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const dashboardHref = user ? ROLE_REDIRECTS[user.role] : "/login";
 
@@ -123,49 +83,29 @@ export default function GNB() {
 
           {/* Desktop nav items */}
           <div className="hidden lg:flex items-center h-full">
-            {NAV.map((item) => (
-              <div
-                key={item.label}
-                className="relative h-full flex items-center"
-                onMouseEnter={() => setActiveMenu(item.label)}
-                onMouseLeave={() => setActiveMenu(null)}
-              >
-                <button
-                  className={`px-5 h-full text-[15px] font-medium transition-colors duration-200 ${
-                    isLight
-                      ? "text-gray-700 hover:text-hwaseong-blue"
-                      : "text-white hover:text-blue-200"
-                  } ${activeMenu === item.label ? (isLight ? "text-hwaseong-blue" : "text-blue-200") : ""}`}
+            {NAV.map((item) =>
+              item.href.startsWith("/") ? (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={`px-5 h-full flex items-center text-[15px] font-medium transition-colors duration-200 ${
+                    isLight ? "text-gray-700 hover:text-hwaseong-blue" : "text-white hover:text-blue-200"
+                  }`}
                 >
                   {item.label}
-                </button>
-
-                {/* Dropdown */}
-                {activeMenu === item.label && (
-                  <div className="absolute top-full left-0 bg-white rounded-xl shadow-xl border border-gray-100 py-2 min-w-[190px] z-50">
-                    {item.subs.map((sub) =>
-                      sub.href.startsWith("/") ? (
-                        <Link
-                          key={sub.label}
-                          href={sub.href}
-                          className="block px-5 py-2.5 text-sm text-gray-600 hover:text-hwaseong-blue hover:bg-hwaseong-light transition-colors"
-                        >
-                          {sub.label}
-                        </Link>
-                      ) : (
-                        <a
-                          key={sub.label}
-                          href={sub.href}
-                          className="block px-5 py-2.5 text-sm text-gray-600 hover:text-hwaseong-blue hover:bg-hwaseong-light transition-colors"
-                        >
-                          {sub.label}
-                        </a>
-                      )
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+                </Link>
+              ) : (
+                <a
+                  key={item.label}
+                  href={item.href}
+                  className={`px-5 h-full flex items-center text-[15px] font-medium transition-colors duration-200 ${
+                    isLight ? "text-gray-700 hover:text-hwaseong-blue" : "text-white hover:text-blue-200"
+                  }`}
+                >
+                  {item.label}
+                </a>
+              )
+            )}
           </div>
 
           {/* Desktop CTA */}
@@ -264,49 +204,27 @@ export default function GNB() {
         </div>
 
         <div className="overflow-y-auto h-full pb-32">
-          {NAV.map((item) => (
-            <div key={item.label} className="border-b border-gray-100">
-              <button
-                className="w-full flex items-center justify-between px-5 py-4 text-left font-medium text-gray-800 text-sm"
-                onClick={() =>
-                  setOpenMobileSub(openMobileSub === item.label ? null : item.label)
-                }
+          {NAV.map((item) =>
+            item.href.startsWith("/") ? (
+              <Link
+                key={item.label}
+                href={item.href}
+                className="block px-5 py-4 text-sm font-medium text-gray-800 border-b border-gray-100 hover:text-hwaseong-blue hover:bg-gray-50 transition-colors"
+                onClick={() => setMobileOpen(false)}
               >
-                <span>{item.label}</span>
-                <svg
-                  className={`w-4 h-4 text-gray-400 transition-transform ${openMobileSub === item.label ? "rotate-180" : ""}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {openMobileSub === item.label && (
-                <div className="bg-gray-50 pb-2">
-                  {item.subs.map((sub) =>
-                    sub.href.startsWith("/") ? (
-                      <Link
-                        key={sub.label}
-                        href={sub.href}
-                        className="block px-8 py-2.5 text-sm text-gray-600 hover:text-hwaseong-blue"
-                        onClick={() => setMobileOpen(false)}
-                      >
-                        {sub.label}
-                      </Link>
-                    ) : (
-                    <a
-                      key={sub.label}
-                      href={sub.href}
-                      className="block px-8 py-2.5 text-sm text-gray-600 hover:text-hwaseong-blue"
-                      onClick={() => setMobileOpen(false)}
-                    >
-                      {sub.label}
-                    </a>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                {item.label}
+              </Link>
+            ) : (
+              <a
+                key={item.label}
+                href={item.href}
+                className="block px-5 py-4 text-sm font-medium text-gray-800 border-b border-gray-100 hover:text-hwaseong-blue hover:bg-gray-50 transition-colors"
+                onClick={() => setMobileOpen(false)}
+              >
+                {item.label}
+              </a>
+            )
+          )}
 
           <div className="px-5 pt-5 space-y-2">
             {user ? (

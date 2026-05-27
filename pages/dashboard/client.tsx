@@ -1361,7 +1361,7 @@ export default function ClientDashboard() {
                       </div>
                     </div>
                     {form.startTime && (
-                      <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded-lg">
+                      <p className="text-[11px] text-blue-700 bg-blue-50 px-3 py-2 rounded-lg whitespace-nowrap overflow-x-auto">
                         ⏱ {form.startTime} ~ {addHours(form.startTime, formLectureHours)} · 회당 {formatHours(formLectureHours)}
                       </p>
                     )}

@@ -14,6 +14,7 @@ type RejectionRecord = {
 
 type SettlementReport = {
   id: string;
+  session_index: number | null;
   attendance_count: number;
   image_urls: string[];
   report_text: string | null;
@@ -24,6 +25,7 @@ type SettlementReport = {
   lecture_dates: string[];
   client_rejected_at: string | null;
   client_rejection_reason: string | null;
+  client_approved_at: string | null;
   rejection_history: RejectionRecord[];
   admin_approved_at: string | null;
   admin_approved_by: string | null;
@@ -37,6 +39,8 @@ type SettlementReport = {
     participant_count: number;
     frequency: string;
     location_type: string;
+    lecture_type: string | null;
+    session_count: number | null;
     leader: {
       id: string;
       profiles: { name: string; email: string } | null;
@@ -46,8 +50,9 @@ type SettlementReport = {
 };
 
 type InstructorFee = {
-  id: string;
-  attendance_count: number;
+  id: string;                      // 최종 승인 보고서 ID (PATCH 대상)
+  total_attendance: number;        // 전체 회차 합산 참석자
+  total_sessions: number;          // 전체 제출 회차 수
   lecture_date: string | null;
   submitted_at: string;
   admin_approved_at: string;
@@ -64,6 +69,8 @@ type InstructorFee = {
     address: string | null;
     location_type: string | null;
     frequency: string | null;
+    lecture_type: string | null;
+    session_count: number | null;
     lecture_hours: number | null;
     leader: {
       id: string;
@@ -97,7 +104,8 @@ type RentalFee = {
 // ─── 상수 ──────────────────────────────────────────────────────────────────
 
 const LOC_LABELS:  Record<string, string> = { offline: "대면", online: "온라인", hybrid: "혼합" };
-const FREQ_LABELS: Record<string, string> = { single: "1회성", regular: "정기" };
+const FREQ_LABELS:  Record<string, string> = { single: "1회성", regular: "정기" };
+const LTYPE_LABELS: Record<string, string> = { oneday: "원데이형", intensive: "집중코스형", longterm: "장기정기형" };
 
 // ─── 헬퍼 ──────────────────────────────────────────────────────────────────
 
@@ -375,6 +383,7 @@ export default function SettlementPage() {
   const [noteInput, setNoteInput] = useState("");
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [showCert, setShowCert] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const printRef = useRef<HTMLDivElement>(null);
 
   // ── 강사료 정산 탭 ──
@@ -434,10 +443,11 @@ export default function SettlementPage() {
   // ── 보고서 승인 ──
 
   // 상태 분류 헬퍼
-  function reportStatus(r: SettlementReport): "rejected" | "client_pending" | "ready" | "approved" {
+  function reportStatus(r: SettlementReport): "rejected" | "client_pending" | "intermediate_done" | "ready" | "approved" {
     if (r.admin_approved_at) return "approved";
     if (r.client_rejected_at) return "rejected";
     if (r.rating_from_client !== null) return "ready";
+    if (r.client_approved_at !== null) return "intermediate_done";
     return "client_pending";
   }
 
@@ -456,6 +466,19 @@ export default function SettlementPage() {
     }
     return list;
   }, [reports, filterApproved, search]);
+
+  const groupedFiltered = useMemo(() => {
+    const map = new Map<string, SettlementReport[]>();
+    for (const r of filtered) {
+      const key = r.match?.id ?? r.id;
+      const arr = map.get(key) ?? [];
+      arr.push(r);
+      map.set(key, arr);
+    }
+    for (const arr of map.values())
+      arr.sort((a, b) => (a.session_index ?? 0) - (b.session_index ?? 0));
+    return [...map.entries()];
+  }, [filtered]);
 
   const summaryApproved      = useMemo(() => reports.filter((r) => reportStatus(r) === "approved").length, [reports]);
   const summaryReady         = useMemo(() => reports.filter((r) => reportStatus(r) === "ready").length, [reports]);
@@ -731,51 +754,122 @@ export default function SettlementPage() {
                 <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
                   {fetching ? (
                     <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
-                  ) : filtered.length === 0 ? (
+                  ) : groupedFiltered.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-32 text-gray-300">
                       <p className="text-3xl mb-1">📋</p>
                       <p className="text-xs">보고서가 없습니다.</p>
                     </div>
                   ) : (
-                    filtered.map((r) => {
-                      const isSelected = selected?.id === r.id;
-                      const st = reportStatus(r);
-                      const badgeCls = st === "approved"       ? "bg-green-100 text-green-700"
-                                     : st === "ready"          ? "bg-amber-100 text-amber-700"
-                                     : st === "rejected"       ? "bg-red-100 text-red-600"
-                                     :                           "bg-sky-100 text-sky-600";
-                      const badgeLabel = st === "approved" ? "✓ 승인완료"
-                                       : st === "ready"    ? "⏳ 승인대기"
-                                       : st === "rejected" ? "↩ 반려됨"
-                                       :                     "🕐 평가대기";
-                      return (
-                        <button
-                          key={r.id}
-                          onClick={() => setSelected(isSelected ? null : r)}
-                          className={`w-full text-left px-4 py-3.5 transition-colors hover:bg-gray-50 ${isSelected ? "bg-blue-50 border-l-4 border-hwaseong-blue" : "border-l-4 border-transparent"}`}
-                        >
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <p className="text-xs font-bold text-hwaseong-text leading-tight line-clamp-2 flex-1">{r.match?.title ?? "—"}</p>
-                            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badgeCls}`}>
-                              {badgeLabel}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-gray-400 mb-1.5 truncate">
-                            🏅 {r.match?.leader?.profiles?.name ?? "—"} · 🏢 {r.match?.client?.name ?? "—"}
-                          </p>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-gray-400">📅 {fmtDate(r.lecture_date ?? r.match?.start_date)}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-gray-400">👥 {r.attendance_count}명</span>
-                              {r.rating_from_client !== null && (
-                                <span className="text-[10px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
-                              )}
-                              {(r.rejection_history?.length ?? 0) > 0 && (
-                                <span className="text-[10px] text-gray-400">↩{r.rejection_history.length}회</span>
-                              )}
+                    groupedFiltered.map(([matchId, groupReports]) => {
+                      const isGroup    = groupReports.length > 1;
+                      const isExpanded = expandedGroups.has(matchId);
+                      const sample     = groupReports[0];
+
+                      const stBadge = (st: ReturnType<typeof reportStatus>) => ({
+                        cls:   st === "approved"          ? "bg-green-100 text-green-700"
+                             : st === "ready"             ? "bg-amber-100 text-amber-700"
+                             : st === "rejected"          ? "bg-red-100 text-red-600"
+                             : st === "intermediate_done" ? "bg-teal-100 text-teal-700"
+                             :                             "bg-sky-100 text-sky-600",
+                        label: st === "approved"          ? "✓ 승인완료"
+                             : st === "ready"             ? "⏳ 최종승인대기"
+                             : st === "rejected"          ? "↩ 반려됨"
+                             : st === "intermediate_done" ? "✔ 수요처승인"
+                             :                             "🕐 평가대기",
+                      });
+
+                      if (!isGroup) {
+                        const r  = groupReports[0];
+                        const isSelected = selected?.id === r.id;
+                        const { cls, label } = stBadge(reportStatus(r));
+                        return (
+                          <button
+                            key={r.id}
+                            onClick={() => setSelected(isSelected ? null : r)}
+                            className={`w-full text-left px-4 py-3.5 transition-colors hover:bg-gray-50 ${isSelected ? "bg-blue-50 border-l-4 border-hwaseong-blue" : "border-l-4 border-transparent"}`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <p className="text-xs font-bold text-hwaseong-text leading-tight line-clamp-2 flex-1">{r.match?.title ?? "—"}</p>
+                              <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>{label}</span>
                             </div>
-                          </div>
-                        </button>
+                            <p className="text-[11px] text-gray-400 mb-1.5 truncate">
+                              🏅 {r.match?.leader?.profiles?.name ?? "—"} · 🏢 {r.match?.client?.name ?? "—"}
+                            </p>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-gray-400">📅 {fmtDate(r.lecture_date ?? r.match?.start_date)}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-400">👥 {r.attendance_count}명</span>
+                                {r.rating_from_client !== null && <span className="text-[10px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>}
+                                {(r.rejection_history?.length ?? 0) > 0 && <span className="text-[10px] text-gray-400">↩{r.rejection_history.length}회</span>}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      }
+
+                      // ── 다회차 그룹 ──
+                      const allStatuses      = groupReports.map((r) => reportStatus(r));
+                      const hasRejected      = allStatuses.includes("rejected");
+                      const hasReady         = allStatuses.includes("ready");
+                      const hasPending       = allStatuses.includes("client_pending");
+                      const allAdminDone     = allStatuses.every((s) => s === "approved" || s === "intermediate_done");
+                      const groupSt          = allAdminDone ? "approved" : hasRejected ? "rejected" : hasReady ? "ready" : hasPending ? "client_pending" : "intermediate_done";
+                      const { cls: gCls, label: gLabel } = stBadge(groupSt);
+                      const adminApprovedCnt = allStatuses.filter((s) => s === "approved").length;
+                      const clientDoneCnt    = allStatuses.filter((s) => s === "intermediate_done").length;
+                      const groupHasSelected = groupReports.some((r) => r.id === selected?.id);
+
+                      return (
+                        <div key={matchId} className="border-b border-gray-50">
+                          {/* 그룹 헤더 */}
+                          <button
+                            onClick={() => setExpandedGroups((prev) => { const next = new Set(prev); next.has(matchId) ? next.delete(matchId) : next.add(matchId); return next; })}
+                            className={`w-full text-left px-4 py-3.5 transition-colors hover:bg-gray-50 ${groupHasSelected ? "bg-blue-50/40" : ""}`}
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                              <p className="text-xs font-bold text-hwaseong-text leading-tight line-clamp-2 flex-1">{sample.match?.title ?? "—"}</p>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${gCls}`}>{gLabel}</span>
+                                <span className="text-gray-400 text-[10px]">{isExpanded ? "▲" : "▼"}</span>
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-gray-400 mb-1 truncate">
+                              🏅 {sample.match?.leader?.profiles?.name ?? "—"} · 🏢 {sample.match?.client?.name ?? "—"}
+                            </p>
+                            <span className="text-[10px] text-gray-400">
+                              📋 {groupReports.length}회차 보고서 · 최종승인 {adminApprovedCnt} · 수요처승인 {clientDoneCnt}
+                            </span>
+                          </button>
+
+                          {/* 펼침: 회차 목록 */}
+                          {isExpanded && (
+                            <div className="bg-gray-50/60 divide-y divide-gray-100 border-t border-gray-100">
+                              {groupReports.map((r, idx) => {
+                                const isSelected = selected?.id === r.id;
+                                const { cls, label } = stBadge(reportStatus(r));
+                                return (
+                                  <button
+                                    key={r.id}
+                                    onClick={() => setSelected(isSelected ? null : r)}
+                                    className={`w-full text-left pl-8 pr-4 py-2.5 transition-colors hover:bg-blue-50/60 ${isSelected ? "bg-blue-50 border-l-4 border-hwaseong-blue" : "border-l-4 border-transparent"}`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[11px] font-bold text-gray-700">
+                                        {(r.session_index ?? idx) + 1}회차
+                                        {r.lecture_date && <span className="font-normal text-gray-400 ml-1">· {fmtDate(r.lecture_date)}</span>}
+                                      </span>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] text-gray-400">👥 {r.attendance_count}명</span>
+                                        {r.rating_from_client !== null && <span className="text-[10px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>}
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>{label}</span>
+                                      </div>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       );
                     })
                   )}
@@ -798,14 +892,16 @@ export default function SettlementPage() {
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             {(() => {
                               const st = reportStatus(selected);
-                              const cls = st === "approved" ? "bg-green-100 text-green-700"
-                                        : st === "ready"    ? "bg-amber-100 text-amber-700"
-                                        : st === "rejected" ? "bg-red-100 text-red-600"
-                                        :                     "bg-sky-100 text-sky-600";
-                              const lbl = st === "approved" ? "✓ 승인 완료"
-                                        : st === "ready"    ? "⏳ 최종 승인 대기"
-                                        : st === "rejected" ? "↩ 수요처 반려 (재작성 중)"
-                                        :                     "🕐 수요처 평가 대기";
+                              const cls = st === "approved"          ? "bg-green-100 text-green-700"
+                                        : st === "ready"             ? "bg-amber-100 text-amber-700"
+                                        : st === "rejected"          ? "bg-red-100 text-red-600"
+                                        : st === "intermediate_done" ? "bg-teal-100 text-teal-700"
+                                        :                              "bg-sky-100 text-sky-600";
+                              const lbl = st === "approved"          ? "✓ 승인 완료"
+                                        : st === "ready"             ? "⏳ 최종 승인 대기"
+                                        : st === "rejected"          ? "↩ 수요처 반려 (재작성 중)"
+                                        : st === "intermediate_done" ? "✔ 수요처 승인 완료 (중간 회차)"
+                                        :                              "🕐 수요처 평가 대기";
                               return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${cls}`}>{lbl}</span>;
                             })()}
                             <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{selected.match?.category ?? "—"}</span>
@@ -824,7 +920,7 @@ export default function SettlementPage() {
                           { label: "강의 일자",     value: fmtDate(selected.lecture_date ?? selected.match?.start_date) },
                           { label: "강의 주소",     value: selected.match?.address ?? "—" },
                           { label: "강의 형태",     value: selected.match?.location_type ? (LOC_LABELS[selected.match.location_type] ?? selected.match.location_type) : "—" },
-                          { label: "진행 방식",     value: selected.match?.frequency ? (FREQ_LABELS[selected.match.frequency] ?? selected.match.frequency) : "—" },
+                          { label: "진행 방식",     value: selected.match?.lecture_type ? (LTYPE_LABELS[selected.match.lecture_type] ?? selected.match.lecture_type) + (selected.match.session_count && selected.match.session_count > 1 ? ` (${selected.match.session_count}회차)` : "") : selected.match?.frequency ? (FREQ_LABELS[selected.match.frequency] ?? selected.match.frequency) : "—" },
                           { label: "참석 인원",     value: `${selected.attendance_count}명` },
                           { label: "보고서 제출일", value: fmtDateTime(selected.submitted_at) },
                         ].map(({ label, value }) => (
@@ -967,7 +1063,6 @@ export default function SettlementPage() {
                       )}
                       {!selected.admin_approved_at && (
                         <>
-                          {/* 승인 불가 안내 */}
                           {selected.client_rejected_at && (
                             <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
                               <span className="text-red-500 flex-shrink-0 mt-0.5">↩</span>
@@ -977,7 +1072,16 @@ export default function SettlementPage() {
                               </div>
                             </div>
                           )}
-                          {!selected.client_rejected_at && selected.rating_from_client === null && (
+                          {!selected.client_rejected_at && selected.client_approved_at && !selected.rating_from_client && (
+                            <div className="bg-teal-50 border border-teal-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+                              <span className="text-teal-500 flex-shrink-0 mt-0.5">✔</span>
+                              <div>
+                                <p className="text-xs font-bold text-teal-700">중간 회차 — 수요처 승인 완료</p>
+                                <p className="text-[11px] text-teal-600">중간 회차는 수요처 승인으로 처리되며, 운영자 별도 승인이 필요하지 않습니다.</p>
+                              </div>
+                            </div>
+                          )}
+                          {!selected.client_rejected_at && !selected.client_approved_at && selected.rating_from_client === null && (
                             <div className="bg-sky-50 border border-sky-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
                               <span className="text-sky-500 flex-shrink-0 mt-0.5">🕐</span>
                               <div>
@@ -986,17 +1090,23 @@ export default function SettlementPage() {
                               </div>
                             </div>
                           )}
-                          <textarea
-                            value={noteInput}
-                            onChange={(e) => setNoteInput(e.target.value)}
-                            placeholder="검토 메모 (선택 사항) — 정산 특이사항, 감면 사유 등"
-                            rows={2}
-                            className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none"
-                          />
+                          {!selected.client_approved_at && (
+                            <textarea
+                              value={noteInput}
+                              onChange={(e) => setNoteInput(e.target.value)}
+                              placeholder="검토 메모 (선택 사항) — 정산 특이사항, 감면 사유 등"
+                              rows={2}
+                              className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-hwaseong-blue/30 resize-none"
+                            />
+                          )}
                         </>
                       )}
                       <div className="flex flex-col sm:flex-row gap-2">
-                        {!selected.admin_approved_at ? (
+                        {selected.client_approved_at && !selected.admin_approved_at ? (
+                          <div className="flex-1 flex items-center justify-center gap-2 py-3 bg-teal-50 text-teal-600 text-sm font-semibold rounded-xl cursor-default border border-teal-200">
+                            <span>✔</span> 수요처 승인 완료 (중간 회차)
+                          </div>
+                        ) : !selected.admin_approved_at ? (
                           <button
                             onClick={handleApprove}
                             disabled={approving || selected.rating_from_client === null || !!selected.client_rejected_at}
@@ -1090,23 +1200,35 @@ export default function SettlementPage() {
                               </div>
                               <p className="text-xs text-gray-600 truncate">{r.match?.title ?? "—"}</p>
                               <div className="flex items-center gap-3 mt-1">
-                                <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
-                                <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
+                                {r.total_sessions > 1 && (
+                                  <span className="text-[11px] text-indigo-500 font-semibold">📋 {r.total_sessions}회차</span>
+                                )}
+                                <span className="text-[11px] text-gray-400">👥 총 {r.total_attendance}명</span>
                                 {r.rating_from_client !== null && (
                                   <span className="text-[11px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
                                 )}
                               </div>
                             </div>
                             <div className="flex-shrink-0 min-w-[120px] text-right" onClick={(e) => e.stopPropagation()}>
+                              {(() => {
+                                const hours    = r.match?.lecture_hours ?? 2;
+                                const sessions = r.total_sessions > 1 ? r.total_sessions : 1;
+                                const suggested = hours * sessions * 30000;
+                                const hint = r.total_sessions > 1
+                                  ? `기준: 30,000원 × ${hours}시간 × ${sessions}회차 = ${fmtWon(suggested)}`
+                                  : `기준: 30,000원 × ${hours}시간 = ${fmtWon(suggested)}`;
+                                return (
                               <FeeCell
                                 id={r.id} fee={r.instructor_fee}
-                                suggestedFee={(r.match?.lecture_hours ?? 2) * 30000}
-                                hintText={`기준: 30,000원 × ${r.match?.lecture_hours ?? 2}시간 = ${fmtWon((r.match?.lecture_hours ?? 2) * 30000)}`}
+                                suggestedFee={suggested}
+                                hintText={hint}
                                 editing={editingIFee}
                                 onStartEdit={(id, fee) => setEditingIFee({ id, fee: String(fee) })}
                                 onSave={saveIFee} onCancel={() => setEditingIFee(null)}
                                 saving={iFeeSaving}
                               />
+                                );
+                              })()}
                             </div>
                             <div className="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[90px]" onClick={(e) => e.stopPropagation()}>
                               <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${noFee ? "bg-gray-100 text-gray-400" : "bg-amber-100 text-amber-700"}`}>
@@ -1171,8 +1293,10 @@ export default function SettlementPage() {
                                 </div>
                                 <p className="text-xs text-gray-400 truncate">{r.match?.title ?? "—"}</p>
                                 <div className="flex items-center gap-3 mt-1">
-                                  <span className="text-[11px] text-gray-400">📅 {fmtDate(r.lecture_date)}</span>
-                                  <span className="text-[11px] text-gray-400">👥 {r.attendance_count}명</span>
+                                  {r.total_sessions > 1 && (
+                                    <span className="text-[11px] text-indigo-400 font-semibold">📋 {r.total_sessions}회차</span>
+                                  )}
+                                  <span className="text-[11px] text-gray-400">👥 총 {r.total_attendance}명</span>
                                   {r.rating_from_client !== null && (
                                     <span className="text-[11px] text-amber-500 font-bold">⭐ {Number(r.rating_from_client).toFixed(1)}</span>
                                   )}
@@ -1427,7 +1551,7 @@ export default function SettlementPage() {
                   { label: "강의 일자", value: fmtDate(selectedIFee.lecture_date) },
                   { label: "강의 주소", value: selectedIFee.match?.address ?? "—" },
                   { label: "강의 형태", value: selectedIFee.match?.location_type ? (LOC_LABELS[selectedIFee.match.location_type] ?? selectedIFee.match.location_type) : "—" },
-                  { label: "참석 인원", value: `${selectedIFee.attendance_count}명` },
+                  { label: "참석 인원", value: selectedIFee.total_sessions > 1 ? `총 ${selectedIFee.total_attendance}명 (${selectedIFee.total_sessions}회차)` : `${selectedIFee.total_attendance}명` },
                   { label: "강사료",   value: selectedIFee.instructor_fee > 0 ? fmtWon(selectedIFee.instructor_fee) : "미입력" },
                   { label: "지급 일시", value: selectedIFee.instructor_fee_paid_at ? fmtDateTime(selectedIFee.instructor_fee_paid_at) : "—" },
                 ].map(({ label, value }) => (

@@ -29,9 +29,12 @@ type MatchingRequest = {
   notes: string | null;
   frequency: string;
   location_type: string;
-  status: "pending" | "rejected";
+  status: "pending" | "rejected" | "matched";
   is_approved: boolean;
   prev_leader_id: string | null;
+  leader_id: string | null;
+  matched_at: string | null;
+  leader: { profiles: { name: string } | null } | null;
   created_at: string;
   updated_at: string;
   client: { name: string; email: string } | null;
@@ -94,6 +97,16 @@ function fmtAvailTimes(times: Record<string, unknown> | null): string {
   const slots = Array.isArray(times.time_slots) ? (times.time_slots as string[])[0] : null;
   const parts = [days.length > 0 ? days.join("·") : null, slots].filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : "—";
+}
+
+function remainingTime(matchedAt: string): { label: string; urgent: boolean } {
+  const deadline = new Date(matchedAt).getTime() + 24 * 60 * 60 * 1000;
+  const diff = deadline - Date.now();
+  if (diff <= 0) return { label: "만료", urgent: true };
+  const h = Math.floor(diff / (1000 * 60 * 60));
+  const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  const urgent = diff < 3 * 60 * 60 * 1000;
+  return { label: `${h}시간 ${m}분 남음`, urgent };
 }
 
 function scoreColor(score: number): string {
@@ -161,6 +174,7 @@ export default function MatchingCenter() {
   const [cancelMode,     setCancelMode]     = useState(false);
   const [cancelReason,   setCancelReason]   = useState("");
   const [cancelling,     setCancelling]     = useState(false);
+  const [unmatching,     setUnmatching]     = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && (!user || user.role !== "admin")) router.replace("/login");
@@ -195,8 +209,19 @@ export default function MatchingCenter() {
     if (user) fetchAll();
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    const onVisible = () => { if (document.visibilityState === "visible") fetchAll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [user]);
+
   // ── 파생 상태 ────────────────────────────────────────────────────────────
 
+  const matchedReqs = useMemo(
+    () => requests.filter((r) => r.status === "matched"),
+    [requests]
+  );
   const rejectedReqs = useMemo(
     () => requests.filter((r) => r.status === "rejected"),
     [requests]
@@ -211,9 +236,10 @@ export default function MatchingCenter() {
   );
 
   const filteredReqs = useMemo(() => {
-    if (!reqSearch.trim()) return requests;
+    const nonMatched = requests.filter((r) => r.status !== "matched");
+    if (!reqSearch.trim()) return nonMatched;
     const q = reqSearch.toLowerCase();
-    return requests.filter(
+    return nonMatched.filter(
       (r) =>
         r.title.toLowerCase().includes(q) ||
         (r.client?.name ?? "").toLowerCase().includes(q) ||
@@ -258,6 +284,22 @@ export default function MatchingCenter() {
     [scoredLeaders, selectedLeaderId]
   );
 
+  // ── 매칭 취소 실행 ──────────────────────────────────────────────────────
+
+  async function handleUnmatch(req: MatchingRequest) {
+    if (unmatching) return;
+    setUnmatching(req.id);
+    const res = await fetch(`/api/admin/match-requests/${req.id}/unmatch`, { method: "POST" });
+    if (res.ok) {
+      await fetchAll();
+      setToast({ msg: `"${req.title}" 매칭 시도가 취소되어 재배정 대기 상태로 돌아갔습니다.`, ok: true });
+    } else {
+      const err = await res.json().catch(() => ({}));
+      setToast({ msg: (err as { error?: string }).error ?? "매칭 취소 중 오류가 발생했습니다.", ok: false });
+    }
+    setUnmatching(null);
+  }
+
   // ── 반려 실행 ────────────────────────────────────────────────────────────
 
   async function handleCancel() {
@@ -298,9 +340,9 @@ export default function MatchingCenter() {
       }),
     });
     if (res.ok) {
-      setRequests((prev) => prev.filter((r) => r.id !== selectedReq.id));
       setToast({ msg: `"${selectedReq.title}"에 ${leader?.name ?? ""} 강사를 배정했습니다.`, ok: true });
       setSelectedReq(null);
+      await fetchAll();
     } else {
       const err = await res.json().catch(() => ({}));
       setToast({ msg: err.error ?? "배정 중 오류가 발생했습니다.", ok: false });
@@ -329,6 +371,11 @@ export default function MatchingCenter() {
             <p className="text-blue-200 text-xs mt-0.5">요청을 선택하면 적합한 인증 강사를 자동 추천합니다.</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {matchedReqs.length > 0 && (
+              <span className="bg-indigo-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                ⏳ 시도 중 {matchedReqs.length}건
+              </span>
+            )}
             {rejectedReqs.length > 0 && (
               <span className="bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
                 재배정 {rejectedReqs.length}건
@@ -370,6 +417,9 @@ export default function MatchingCenter() {
                   <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{requests.length}</span>
                 </div>
                 <div className="flex gap-1">
+                  {matchedReqs.length > 0 && (
+                    <span className="text-[11px] bg-indigo-100 text-indigo-600 font-bold px-2 py-0.5 rounded-full">⏳ {matchedReqs.length}</span>
+                  )}
                   {rejectedReqs.length > 0 && (
                     <span className="text-[11px] bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">⚠️ {rejectedReqs.length}</span>
                   )}
@@ -398,13 +448,63 @@ export default function MatchingCenter() {
             <div className="overflow-y-auto flex-1 p-3 space-y-1.5">
               {fetching ? (
                 <div className="flex items-center justify-center h-32 text-gray-300 text-sm">로딩 중...</div>
-              ) : filteredReqs.length === 0 ? (
+              ) : filteredReqs.length === 0 && matchedReqs.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-32 text-gray-300">
                   <p className="text-3xl mb-1">🎉</p>
                   <p className="text-xs">{requests.length === 0 ? "매칭 대기 요청이 없습니다" : "검색 결과 없음"}</p>
                 </div>
               ) : (
                 <>
+                  {/* 매칭 시도 중 섹션 */}
+                  {matchedReqs.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-1.5 px-1 py-1">
+                        <span className="text-xs font-bold text-indigo-600">⏳ 매칭 시도 중</span>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-600 font-bold px-1.5 py-0.5 rounded-full">
+                          {matchedReqs.length}
+                        </span>
+                      </div>
+                      {matchedReqs.map((req) => {
+                        const leaderName = req.leader?.profiles?.name ?? "—";
+                        const rt = req.matched_at ? remainingTime(req.matched_at) : null;
+                        const isUnmatching = unmatching === req.id;
+                        return (
+                          <div key={req.id} className="rounded-xl p-3 border-2 border-indigo-200 bg-indigo-50 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-xs font-bold text-hwaseong-text leading-tight flex-1 line-clamp-2">{req.title}</p>
+                              <button
+                                onClick={() => handleUnmatch(req)}
+                                disabled={isUnmatching}
+                                className="flex-shrink-0 text-[10px] text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-0.5 rounded-lg transition-colors disabled:opacity-50"
+                              >
+                                {isUnmatching ? "취소 중..." : "취소"}
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] bg-indigo-100 text-indigo-700 font-semibold px-2 py-0.5 rounded-lg">
+                                👤 {leaderName} 강사
+                              </span>
+                              {rt && (
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+                                  rt.urgent ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-500"
+                                }`}>
+                                  ⏱ {rt.label}
+                                </span>
+                              )}
+                              {req.address && (
+                                <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">📍 {req.address}</span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-gray-400 truncate">🏢 {req.client?.name ?? "—"}</p>
+                          </div>
+                        );
+                      })}
+                      {(filteredReqs.length > 0) && (
+                        <div className="border-t border-gray-100 my-2" />
+                      )}
+                    </>
+                  )}
+
                   {/* 재배정 섹션 */}
                   {filteredReqs.some((r) => r.status === "rejected") && (
                     <>

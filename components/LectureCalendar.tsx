@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 export type CalendarMatch = {
   id: string;
@@ -119,15 +119,26 @@ export default function LectureCalendar({
   matches,
   highlightId,
   previewMatch,
+  previewLabel,
 }: {
   matches: CalendarMatch[];
   highlightId?: string;
   previewMatch?: CalendarMatch;
+  previewLabel?: string;
 }) {
   const today = new Date();
   const [viewYear,  setViewYear]  = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selected,  setSelected]  = useState<string | null>(null);
+
+  // previewMatch의 시작일이 바뀌면 해당 월로 자동 이동
+  useEffect(() => {
+    if (!previewMatch?.start_date) return;
+    const d = new Date(previewMatch.start_date + "T00:00:00");
+    setViewYear(d.getFullYear());
+    setViewMonth(d.getMonth());
+    setSelected(null);
+  }, [previewMatch?.start_date]);
 
   const dateMap = useMemo(
     () => buildDateMap(matches, highlightId, previewMatch),
@@ -239,7 +250,7 @@ export default function LectureCalendar({
 
         {/* 범례 */}
         <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 px-1">
-          {Object.entries(TYPE_LABEL).map(([key, label]) => (
+          {matches.length > 0 && Object.entries(TYPE_LABEL).map(([key, label]) => (
             <div key={key} className="flex items-center gap-1">
               <span className={`w-2 h-2 rounded-full ${TYPE_COLOR[key]}`} />
               <span className="text-[10px] text-gray-400">{label}</span>
@@ -248,7 +259,7 @@ export default function LectureCalendar({
           {previewMatch && (
             <div className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-amber-400 ring-1 ring-amber-500" />
-              <span className="text-[10px] text-amber-600 font-semibold">수락 시 추가</span>
+              <span className="text-[10px] text-amber-600 font-semibold">{previewLabel ?? "수락 시 추가"}</span>
             </div>
           )}
         </div>
@@ -278,7 +289,7 @@ export default function LectureCalendar({
                   <div className="flex items-center gap-1.5">
                     <p className={`text-xs truncate ${e.highlight ? "font-bold text-hwaseong-text" : "font-medium text-gray-400"}`}>{e.title}</p>
                     {e.preview && (
-                      <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full flex-shrink-0">수락 시 추가</span>
+                      <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full flex-shrink-0">{previewLabel ?? "수락 시 추가"}</span>
                     )}
                     {e.highlight && (
                       <span className="text-[9px] font-bold text-hwaseong-blue bg-hwaseong-blue/10 px-1.5 py-0.5 rounded-full flex-shrink-0">이 강의</span>

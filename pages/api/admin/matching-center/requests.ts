@@ -15,11 +15,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       id, title, category, target_audience, participant_count,
       institution_type, address, start_date, notes,
       frequency, location_type, status, is_approved,
-      prev_leader_id, created_at, updated_at,
-      client:profiles!match_requests_client_id_fkey(name, email, org_name, org_type)
+      prev_leader_id, leader_id, matched_at, created_at, updated_at,
+      client:profiles!match_requests_client_id_fkey(name, email, org_name, org_type),
+      leader:leader_profiles!match_requests_leader_id_fkey(
+        profiles!leader_profiles_user_id_fkey(name)
+      )
     `)
-    .or("status.eq.rejected,and(status.eq.pending,is_approved.eq.true)")
-    .order("status", { ascending: false })   // rejected(r) > pending(p)
+    .or("status.eq.matched,status.eq.rejected,and(status.eq.pending,is_approved.eq.true)")
     .order("created_at", { ascending: true });
 
   if (error) return res.status(500).json({ error: error.message });

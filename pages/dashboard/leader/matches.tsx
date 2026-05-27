@@ -128,7 +128,7 @@ export default function LeaderMatchesPage() {
   const [rejectPreset, setRejectPreset]     = useState("");
   const [rejectCustom, setRejectCustom]     = useState("");
   const [rejectingId, setRejectingId]       = useState<string | null>(null);
-  const [toast, setToast]                   = useState<{ msg: string; ok: boolean } | null>(null);
+  const [toast, setToast]                   = useState<{ msg: string; ok: boolean; duration?: number } | null>(null);
   const [filter, setFilter]                 = useState<FilterType>("all");
   const [expandedCalendar, setExpandedCalendar] = useState<string | null>(null);
 
@@ -138,7 +138,7 @@ export default function LeaderMatchesPage() {
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3500);
+    const t = setTimeout(() => setToast(null), toast.duration ?? 3500);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -154,7 +154,7 @@ export default function LeaderMatchesPage() {
   async function acceptMatch(matchId: string) {
     setActionInProgress(matchId);
     const res = await fetch(`/api/match-requests/${matchId}/accept`, { method: "PATCH" });
-    if (res.ok) { await fetchAll(); setToast({ msg: "매칭을 수락했습니다.", ok: true }); }
+    if (res.ok) { await fetchAll(); setToast({ msg: "내 강의 세션에 추가됐습니다! 강의 탭에서 일정을 확인하세요.", ok: true, duration: 5000 }); }
     else setToast({ msg: "처리 중 오류가 발생했습니다.", ok: false });
     setActionInProgress(null);
   }
@@ -308,10 +308,12 @@ export default function LeaderMatchesPage() {
 
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white text-sm font-semibold max-w-sm ${
-          toast.ok ? "bg-green-600" : "bg-red-500"
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-white font-semibold max-w-sm ${
+          toast.duration && toast.duration >= 5000
+            ? "text-base bg-gradient-to-r from-green-500 to-emerald-600 shadow-green-200"
+            : toast.ok ? "text-sm bg-green-600" : "text-sm bg-red-500"
         }`}>
-          <span>{toast.ok ? "✅" : "❌"}</span>
+          <span className={toast.duration && toast.duration >= 5000 ? "text-xl" : ""}>{toast.ok ? "🎉" : "❌"}</span>
           <span className="flex-1">{toast.msg}</span>
           <button onClick={() => setToast(null)} className="opacity-70 hover:opacity-100">✕</button>
         </div>

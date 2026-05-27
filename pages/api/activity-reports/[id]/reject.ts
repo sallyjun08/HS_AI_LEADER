@@ -28,8 +28,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     return res.status(403).json({ error: "이 보고서에 대한 권한이 없습니다." });
   }
 
-  if (report.rating_from_client !== null) {
-    return res.status(409).json({ error: "이미 평가가 완료된 보고서는 반려할 수 없습니다." });
+  if (report.rating_from_client !== null || (report as any).client_approved_at) {
+    return res.status(409).json({ error: "이미 승인된 보고서는 반려할 수 없습니다." });
   }
   if (report.client_rejected_at) {
     return res.status(409).json({ error: "이미 반려된 보고서입니다." });

@@ -46,6 +46,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const [currentHash, setCurrentHash] = useState("");
 
   const [adminAlerts, setAdminAlerts] = useState<AdminAlerts>({ reviewing: 0, pending: 0, rejected: 0, unverified: 0 });
+  const [leaderOngoing, setLeaderOngoing] = useState(0);
 
   const fetchAdminAlerts = useCallback(async () => {
     try {
@@ -69,6 +70,21 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
     const id = setInterval(fetchAdminAlerts, 30_000);
     return () => clearInterval(id);
   }, [user, fetchAdminAlerts]);
+
+  useEffect(() => {
+    if (!user || user.role !== "leader") return;
+    const fetchLeaderOngoing = async () => {
+      try {
+        const data = await fetch("/api/match-requests").then((r) => r.json());
+        if (Array.isArray(data))
+          setLeaderOngoing(data.filter((m) => m.status === "ongoing").length);
+      } catch {}
+    };
+    fetchLeaderOngoing();
+    const onVisible = () => { if (document.visibilityState === "visible") fetchLeaderOngoing(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [user]);
 
   useEffect(() => {
     setCurrentHash(window.location.hash);
@@ -100,6 +116,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
   const totalAlerts = adminAlerts.reviewing + adminAlerts.pending + adminAlerts.rejected + adminAlerts.unverified;
 
   function navBadge(href: string): number {
+    if (role === "leader" && href === "/dashboard/leader/lectures") return leaderOngoing;
     if (role !== "admin") return 0;
     if (href === "/admin/leaders")         return adminAlerts.unverified;
     if (href === "/admin/review")          return adminAlerts.reviewing;
@@ -205,7 +222,7 @@ export default function DashboardLayout({ pageTitle, children }: Props) {
                   <span className="text-base w-5 text-center">{item.icon}</span>
                   <span className="flex-1">{item.label}</span>
                   {badge > 0 ? (
-                    <span className="ml-auto min-w-[20px] h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1 animate-pulse">
+                    <span className="ml-auto min-w-[20px] h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1">
                       {badge}
                     </span>
                   ) : isActive ? (

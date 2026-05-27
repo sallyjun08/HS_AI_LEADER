@@ -118,15 +118,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     if (error) return res.status(500).json({ error: error.message });
 
     // ── 진행 상태 갱신 ────────────────────────────────────────────────────
+    // 완료(completed) 상태는 운영자가 최종 승인할 때 설정됨 — 여기서는 ongoing 유지
     const isLastSession =
       mr.lecture_type !== "longterm" || sessionIndex + 1 >= (mr.session_count ?? 1);
 
-    await Promise.all([
-      isLastSession
-        ? supabaseAdmin.from("match_requests").update({ status: "completed" }).eq("id", matchId)
-        : Promise.resolve(),
-      supabaseAdmin.rpc("increment_lecture_count", { p_leader_id: lp.id }),
-    ]);
+    await supabaseAdmin.rpc("increment_lecture_count", { p_leader_id: lp.id });
 
     return res.status(201).json({ ...report, isLastSession });
   }

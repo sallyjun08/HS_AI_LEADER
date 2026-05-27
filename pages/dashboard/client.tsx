@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/lib/auth-context";
 import DashboardLayout from "@/components/DashboardLayout";
+import LectureCalendar, { type CalendarMatch } from "@/components/LectureCalendar";
 import {
   Bird, Backpack, BookOpen, Pencil, GraduationCap,
   Briefcase, Home, Smile, PenLine,
@@ -317,6 +318,7 @@ type ClientReport = {
   image_urls: string[];
   rating_from_client: number | null;
   client_feedback: string | null;
+  client_approved_at: string | null;
   client_rejected_at: string | null;
   client_rejection_reason: string | null;
   submitted_at: string;
@@ -353,6 +355,7 @@ export default function ClientDashboard() {
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [rejectionState, setRejectionState] = useState<RejectionState | null>(null);
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
   const [activePage, setActivePage] = useState(1);
@@ -371,6 +374,17 @@ export default function ClientDashboard() {
     if (Array.isArray(reqs)) setRequests(reqs);
     if (Array.isArray(reps)) setReports(reps);
   }
+
+  // 집중코스형: 시작일 + 회차 → 종료일 자동 계산
+  useEffect(() => {
+    if (form.lectureType !== "intensive" || !form.startDate) return;
+    const start = new Date(form.startDate + "T00:00:00");
+    start.setDate(start.getDate() + (Number(form.sessionCount) || 1) - 1);
+    const y = start.getFullYear();
+    const m = String(start.getMonth() + 1).padStart(2, "0");
+    const d = String(start.getDate()).padStart(2, "0");
+    setForm((p) => ({ ...p, endDate: `${y}-${m}-${d}` }));
+  }, [form.lectureType, form.startDate, form.sessionCount]);
 
   // 장기정기형: 날짜 범위 + 요일 → 회차 자동 계산
   const autoSessionCount = useMemo(() => {
@@ -470,6 +484,16 @@ export default function ClientDashboard() {
     }
   }
 
+  async function submitApproval(reportId: string) {
+    setApprovingId(reportId);
+    try {
+      const res = await fetch(`/api/activity-reports/${reportId}/approve`, { method: "PATCH" });
+      if (res.ok) await fetchAll();
+    } finally {
+      setApprovingId(null);
+    }
+  }
+
   async function submitRejection(reportId: string, reason: string) {
     if (!reason.trim()) return;
     setRejectSubmitting(true);
@@ -488,6 +512,42 @@ export default function ClientDashboard() {
     }
   }
 
+  const tomorrow = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  const formPreviewMatch = useMemo((): CalendarMatch | undefined => {
+    if (!form.lectureType || !form.startDate) return undefined;
+    const sc = Number(form.sessionCount) || 1;
+    const rawH = form.lectureType === "oneday" && form.startTime && form.endTime
+      ? (timeToMinutes(form.endTime) - timeToMinutes(form.startTime)) / 60
+      : form.lectureType === "longterm" && form.weekdaySlots.length > 0
+        ? (() => {
+            const filled = form.weekdaySlots.filter((s) => s.startTime && s.endTime);
+            return filled.length === 0 ? null
+              : filled.reduce((sum, s) => sum + (timeToMinutes(s.endTime) - timeToMinutes(s.startTime)) / 60, 0) / filled.length;
+          })()
+        : null;
+    const lh = rawH ?? (Number(form.lectureHours) || 2);
+    const intSlots = form.lectureType === "intensive" && form.startDate && form.startTime
+      ? generateConsecutiveDates(form.startDate, sc, form.startTime, addHours(form.startTime, lh))
+      : [];
+    const base: CalendarMatch = {
+      id: "__preview__", title: form.title || "신청 중인 강의",
+      start_date: form.startDate, end_date: form.endDate || null,
+      status: "preview", lecture_type: form.lectureType, session_count: sc, lecture_times: null,
+    };
+    if (form.lectureType === "oneday")
+      return { ...base, lecture_times: [{ startTime: form.startTime || undefined }] };
+    if (form.lectureType === "intensive")
+      return { ...base, lecture_times: intSlots.length > 0 ? intSlots.map((s) => ({ date: s.date, startTime: s.startTime })) : form.startTime ? [{ startTime: form.startTime }] : null };
+    if (form.lectureType === "longterm" && form.weekdaySlots.length > 0)
+      return { ...base, lecture_times: form.weekdaySlots.map((s) => ({ day: s.day, startTime: s.startTime || undefined })) };
+    return undefined;
+  }, [form]);
+
   if (loading || !user) {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
@@ -500,21 +560,10 @@ export default function ClientDashboard() {
   }, {});
 
   const PAGE_SIZE = 5;
-  // 수요처 기준 완료됨: status=completed + 보고서 있음 + 수요처가 평가(승인)한 것
-  const activeRequests = requests.filter((r) => {
-    if (r.status !== "completed") return true;
-    const report = reportByMatchId[r.id];
-    if (!report) return true;                          // 보고서 미제출
-    if (report.client_rejected_at) return true;        // 반려 → 재작성 대기
-    return report.rating_from_client === null;         // 미평가 → 평가 대기
-  });
-  const completedRequests = [...requests.filter((r) => {
-    if (r.status !== "completed") return false;
-    const report = reportByMatchId[r.id];
-    if (!report) return false;
-    if (report.client_rejected_at) return false;
-    return report.rating_from_client !== null;         // 수요처 평가 완료
-  })].sort((a, b) => b.start_date.localeCompare(a.start_date));
+  // completed = 운영자 최종 승인 완료 시에만 (approve API가 status를 completed로 변경)
+  const activeRequests   = requests.filter((r) => r.status !== "completed");
+  const completedRequests = [...requests.filter((r) => r.status === "completed")]
+    .sort((a, b) => b.start_date.localeCompare(a.start_date));
 
   const pending = requests.filter((r) => r.status === "pending").length;
   const matched = requests.filter((r) => ["matched", "ongoing"].includes(r.status)).length;
@@ -581,6 +630,7 @@ export default function ClientDashboard() {
     form.lectureType === "intensive" && form.startDate && form.startTime
       ? generateConsecutiveDates(form.startDate, formSessionCount, form.startTime, addHours(form.startTime, formLectureHours))
       : [];
+
 
   return (
     <>
@@ -890,10 +940,45 @@ export default function ClientDashboard() {
                               <div className="space-y-2 pt-1">
                                 <p className="text-[11px] font-bold text-indigo-600">회차별 보고서</p>
                                 {matchReports.map((rpt) => (
-                                  <SessionReportCard key={rpt.id} report={rpt} />
+                                  <SessionReportCard
+                                    key={rpt.id}
+                                    report={rpt}
+                                    isLast={(rpt.session_index ?? 0) + 1 === req.session_count}
+                                    rejectionState={rejectionState}
+                                    rejectSubmitting={rejectSubmitting}
+                                    approving={approvingId === rpt.id}
+                                    onStartReject={() => setRejectionState({ reportId: rpt.id, reason: "" })}
+                                    onCancelReject={() => setRejectionState(null)}
+                                    onChangeReason={(v) => setRejectionState((p) => p ? { ...p, reason: v } : p)}
+                                    onSubmitReject={() => submitRejection(rejectionState!.reportId, rejectionState!.reason)}
+                                    onApprove={() => submitApproval(rpt.id)}
+                                  />
                                 ))}
                               </div>
                             )}
+                            {/* 마지막 회차 제출 완료 시 평점 UI */}
+                            {done >= total && (() => {
+                              const lastRpt = matchReports[matchReports.length - 1];
+                              if (!lastRpt) return null;
+                              return (
+                                <ReportReviewBlock
+                                  report={lastRpt}
+                                  reviewState={reviewState}
+                                  rejectionState={rejectionState}
+                                  ratingSubmitting={ratingSubmitting}
+                                  rejectSubmitting={rejectSubmitting}
+                                  onStartReview={() => setReviewState({ reportId: lastRpt.id, rating: 5, feedback: "" })}
+                                  onStartReject={() => setRejectionState({ reportId: lastRpt.id, reason: "" })}
+                                  onCancelReview={() => setReviewState(null)}
+                                  onCancelReject={() => setRejectionState(null)}
+                                  onChangeRating={(v) => setReviewState((p) => p ? { ...p, rating: v } : p)}
+                                  onChangeFeedback={(v) => setReviewState((p) => p ? { ...p, feedback: v } : p)}
+                                  onChangeReason={(v) => setRejectionState((p) => p ? { ...p, reason: v } : p)}
+                                  onSubmitReview={() => submitRating(reviewState!.reportId, reviewState!.rating, reviewState!.feedback)}
+                                  onSubmitReject={() => submitRejection(rejectionState!.reportId, rejectionState!.reason)}
+                                />
+                              );
+                            })()}
                           </div>
                         );
                       })()}
@@ -1095,7 +1180,19 @@ export default function ClientDashboard() {
                                   <span className="text-[11px] text-gray-400">{matchReports.length} / {req.session_count}회차</span>
                                 </div>
                                 {matchReports.map((rpt) => (
-                                  <SessionReportCard key={rpt.id} report={rpt} />
+                                  <SessionReportCard
+                                    key={rpt.id}
+                                    report={rpt}
+                                    isLast={(rpt.session_index ?? 0) + 1 === req.session_count}
+                                    rejectionState={rejectionState}
+                                    rejectSubmitting={rejectSubmitting}
+                                    approving={approvingId === rpt.id}
+                                    onStartReject={() => setRejectionState({ reportId: rpt.id, reason: "" })}
+                                    onCancelReject={() => setRejectionState(null)}
+                                    onChangeReason={(v) => setRejectionState((p) => p ? { ...p, reason: v } : p)}
+                                    onSubmitReject={() => submitRejection(rejectionState!.reportId, rejectionState!.reason)}
+                                    onApprove={() => submitApproval(rpt.id)}
+                                  />
                                 ))}
                               </div>
                             );
@@ -1275,7 +1372,7 @@ export default function ClientDashboard() {
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-1">날짜</label>
                       <input
-                        type="date" value={form.startDate} required
+                        type="date" value={form.startDate} required min={tomorrow}
                         onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))}
                         className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400/30"
                       />
@@ -1320,19 +1417,19 @@ export default function ClientDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1">시작일</label>
                         <input
-                          type="date" value={form.startDate} required
+                          type="date" value={form.startDate} required min={tomorrow}
                           onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))}
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/30"
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1">종료일</label>
-                        <input
-                          type="date" value={form.endDate}
-                          min={form.startDate || undefined}
-                          onChange={(e) => setForm((p) => ({ ...p, endDate: e.target.value }))}
-                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400/30"
-                        />
+                        <div className="flex items-center h-[42px] px-3 border border-gray-100 rounded-xl bg-gray-50">
+                          <span className="text-sm text-gray-600 flex-1">
+                            {form.endDate ? form.endDate.replace(/-/g, ".") : "—"}
+                          </span>
+                          <span className="text-[10px] text-gray-400 ml-1.5">자동</span>
+                        </div>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -1407,7 +1504,7 @@ export default function ClientDashboard() {
                           type="date"
                           value={form.startDate}
                           onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))}
-                          required
+                          required min={tomorrow}
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400/30"
                         />
                       </div>
@@ -1416,7 +1513,7 @@ export default function ClientDashboard() {
                         <input
                           type="date"
                           value={form.endDate}
-                          min={form.startDate || undefined}
+                          min={form.startDate || tomorrow}
                           onChange={(e) => setForm((p) => ({ ...p, endDate: e.target.value }))}
                           className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400/30"
                         />
@@ -1545,6 +1642,14 @@ export default function ClientDashboard() {
                   </div>
                 )}
               </div>
+
+              {/* 신청 일정 캘린더 미리보기 */}
+              {formPreviewMatch && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">📅 신청 일정 미리보기</p>
+                  <LectureCalendar matches={[]} previewMatch={formPreviewMatch} previewLabel="신청 예정" />
+                </div>
+              )}
 
               {/* 공간·장비 대여 신청 */}
               <div className="border border-dashed border-gray-200 rounded-xl overflow-hidden">
@@ -1888,7 +1993,7 @@ export default function ClientDashboard() {
                       </div>
                     ) : (
                       <input
-                        type="date" value={form.startDate}
+                        type="date" value={form.startDate} min={tomorrow}
                         onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))}
                         className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" required
                       />
@@ -2015,29 +2120,128 @@ export default function ClientDashboard() {
   );
 }
 
-function SessionReportCard({ report }: { report: ClientReport }) {
+function SessionReportCard({
+  report,
+  isLast,
+  rejectionState,
+  rejectSubmitting,
+  approving,
+  onStartReject,
+  onCancelReject,
+  onChangeReason,
+  onSubmitReject,
+  onApprove,
+}: {
+  report: ClientReport;
+  isLast?: boolean;
+  rejectionState?: RejectionState | null;
+  rejectSubmitting?: boolean;
+  approving?: boolean;
+  onStartReject?: () => void;
+  onCancelReject?: () => void;
+  onChangeReason?: (v: string) => void;
+  onSubmitReject?: () => void;
+  onApprove?: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = !!(report.report_text || (report.image_urls?.length > 0));
+  const isRejected = !!report.client_rejected_at;
+  const isApproved = !!report.client_approved_at || report.rating_from_client !== null;
+  const isRejectingThis = rejectionState?.reportId === report.id;
+  const canAct     = !isRejected && !isApproved;
+
   return (
-    <div className="bg-white border border-indigo-100 rounded-xl overflow-hidden">
-      <button
-        type="button"
-        onClick={() => hasDetail && setExpanded((v) => !v)}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left ${hasDetail ? "hover:bg-indigo-50/40 cursor-pointer" : "cursor-default"}`}
-      >
-        <div className="w-6 h-6 rounded-lg bg-indigo-500 text-white text-[10px] font-black flex items-center justify-center flex-shrink-0">
-          {(report.session_index ?? 0) + 1}
+    <div className={`border rounded-xl overflow-hidden ${isRejected ? "border-red-200 bg-red-50/40" : isApproved ? "border-green-200 bg-green-50/30" : "border-indigo-100 bg-white"}`}>
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <button
+          type="button"
+          onClick={() => hasDetail && setExpanded((v) => !v)}
+          className={`flex items-center gap-3 flex-1 min-w-0 text-left ${hasDetail ? "cursor-pointer" : "cursor-default"}`}
+        >
+          <div className={`w-6 h-6 rounded-lg text-white text-[10px] font-black flex items-center justify-center flex-shrink-0 ${
+            isRejected ? "bg-red-400" : "bg-indigo-500"
+          }`}>
+            {(report.session_index ?? 0) + 1}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-xs font-semibold ${isRejected ? "text-red-700" : "text-indigo-800"}`}>
+              {report.lecture_date?.replace(/-/g, ".") ?? "—"}
+            </p>
+            <p className={`text-[11px] ${isRejected ? "text-red-400" : "text-indigo-400"}`}>참석 {report.attendance_count}명</p>
+          </div>
+          {hasDetail && (
+            <span className={`text-gray-300 text-xs flex-shrink-0 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>▾</span>
+          )}
+        </button>
+        {/* 상태 배지 / 액션 버튼 */}
+        {isRejected ? (
+          <span className="flex-shrink-0 text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">반려됨</span>
+        ) : isApproved ? (
+          <span className="flex-shrink-0 text-[10px] font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+            {report.rating_from_client ? `승인됨 ⭐${report.rating_from_client}` : "승인됨"}
+          </span>
+        ) : canAct ? (
+          isLast ? (
+            <span className="flex-shrink-0 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">⭐ 평가 대기</span>
+          ) : (
+            <div className="flex gap-1 flex-shrink-0">
+              {onApprove && (
+                <button
+                  type="button"
+                  onClick={onApprove}
+                  disabled={approving}
+                  className="text-[10px] text-green-600 hover:text-green-800 border border-green-200 hover:border-green-400 px-2 py-0.5 rounded-lg transition-colors disabled:opacity-50"
+                >{approving ? "처리 중..." : "승인"}</button>
+              )}
+              {!approving && onStartReject && (
+                <button
+                  type="button"
+                  onClick={onStartReject}
+                  className="text-[10px] text-red-400 hover:text-red-600 border border-red-200 hover:border-red-400 px-2 py-0.5 rounded-lg transition-colors"
+                >반려</button>
+              )}
+            </div>
+          )
+        ) : null}
+      </div>
+
+      {/* 반려 사유 입력 패널 */}
+      {isRejectingThis && (
+        <div className="px-3 pb-3 border-t border-red-100 pt-2 space-y-2">
+          <p className="text-[11px] font-bold text-red-700">{(report.session_index ?? 0) + 1}회차 반려 사유</p>
+          <textarea
+            value={rejectionState?.reason ?? ""}
+            onChange={(e) => onChangeReason?.(e.target.value)}
+            placeholder="구체적인 반려 사유를 입력하세요"
+            rows={2}
+            className="w-full px-2.5 py-2 border border-red-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-red-300 resize-none"
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onSubmitReject}
+              disabled={rejectSubmitting || (rejectionState?.reason.trim().length ?? 0) < 5}
+              className="flex-1 py-1.5 bg-red-500 text-white text-xs font-bold rounded-lg hover:bg-red-600 disabled:opacity-40 transition-colors"
+            >
+              {rejectSubmitting ? "처리 중..." : "반려 확정"}
+            </button>
+            <button type="button" onClick={onCancelReject} className="px-3 py-1.5 text-xs text-gray-400 hover:bg-gray-100 rounded-lg">취소</button>
+          </div>
+          {report.client_rejection_reason && (
+            <p className="text-[11px] text-red-500">이전 사유: {report.client_rejection_reason}</p>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-indigo-800">
-            {report.lecture_date?.replace(/-/g, ".") ?? "—"}
-          </p>
-          <p className="text-[11px] text-indigo-400">참석 {report.attendance_count}명</p>
+      )}
+
+      {/* 반려된 경우 사유 표시 */}
+      {isRejected && report.client_rejection_reason && !isRejectingThis && (
+        <div className="px-3 pb-2.5 border-t border-red-100">
+          <p className="text-[11px] text-red-500 pt-2">반려 사유: {report.client_rejection_reason}</p>
         </div>
-        {hasDetail && (
-          <span className={`text-gray-300 text-xs flex-shrink-0 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>▾</span>
-        )}
-      </button>
+      )}
+
+      {/* 상세 내용 */}
       {expanded && hasDetail && (
         <div className="px-3 pb-3 space-y-2 border-t border-indigo-50">
           {report.report_text && (
@@ -2048,11 +2252,7 @@ function SessionReportCard({ report }: { report: ClientReport }) {
               {report.image_urls.map((url, i) => (
                 // eslint-disable-next-line @next/next/no-img-element
                 <a key={i} href={url} target="_blank" rel="noreferrer">
-                  <img
-                    src={url}
-                    alt={`현장 사진 ${i + 1}`}
-                    className="w-20 h-20 object-cover rounded-lg border border-indigo-100 hover:opacity-90 transition-opacity"
-                  />
+                  <img src={url} alt={`현장 사진 ${i + 1}`} className="w-20 h-20 object-cover rounded-lg border border-indigo-100 hover:opacity-90 transition-opacity" />
                 </a>
               ))}
             </div>

@@ -13,7 +13,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
 
   const { data: report } = await supabaseAdmin
     .from("activity_reports")
-    .select("id, rating_from_client, client_rejected_at, admin_approved_at")
+    .select("id, match_id, rating_from_client, client_rejected_at, admin_approved_at")
     .eq("id", id)
     .single();
 
@@ -37,6 +37,13 @@ async function handler(req: NextApiRequest, res: NextApiResponse, user: TokenPay
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // 최종 승인 시 매칭 완료 처리
+  await supabaseAdmin
+    .from("match_requests")
+    .update({ status: "completed" })
+    .eq("id", report.match_id);
+
   return res.status(200).json(data);
 }
 

@@ -81,6 +81,7 @@ type Report = {
   submitted_at: string;
   client_rejected_at: string | null;
   client_rejection_reason: string | null;
+  client_approved_at: string | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -228,47 +229,30 @@ export default function LeaderLecturesPage() {
     if (user) fetchAll();
   }, [user]);
 
-  // 보고서가 있고 반려되지 않은 completed만 "완료됨", 나머지는 "진행 중"
-  const ongoingMatches = useMemo(
-    () => matches.filter((m) => {
-      if (m.status === "matched") return true;             // 수락 대기 중
-      if (m.status === "ongoing") return true;
-      if (m.status !== "completed") return false;
-      const reports = reportsByMatch.get(m.id) ?? [];
-      if (reports.length === 0) return true;                          // 보고서 미제출
-      if (reports.some((r) => r.client_rejected_at)) return true;    // 반려됨 → 재작성 필요
-      return !reports.every((r) => !!r.admin_approved_at);           // 운영자 미승인 → 승인 대기 중
-    }),
-    [matches, reportsByMatch],
-  );
-  const completedMatches = useMemo(
-    () => matches.filter((m) => {
-      if (m.status !== "completed") return false;
-      const reports = reportsByMatch.get(m.id) ?? [];
-      if (reports.length === 0) return false;
-      if (reports.some((r) => r.client_rejected_at)) return false;   // 반려됨
-      return reports.every((r) => !!r.admin_approved_at);            // 모든 보고서 운영자 승인 완료
-    }),
-    [matches, reportsByMatch],
-  );
+  // status 필드를 직접 신뢰: completed = 운영자 최종 승인 완료
+  const ongoingMatches   = useMemo(() => matches.filter((m) => m.status === "matched" || m.status === "ongoing"), [matches]);
+  const completedMatches = useMemo(() => matches.filter((m) => m.status === "completed"), [matches]);
 
   const byType = (list: MatchRequest[]) =>
     typeFilter === "all" ? list : list.filter((m) => m.lecture_type === typeFilter);
 
-  // 각 진행중 매칭의 보고서 단계 분류
+  // 각 진행중 매칭의 보고서 단계 분류 — 마지막 회차 기준으로 판단
   const matchStages = useMemo(() => {
     const awaitingClientIds = new Set<string>();
     const awaitingAdminIds  = new Set<string>();
     for (const m of ongoingMatches) {
       const reports     = reportsByMatch.get(m.id) ?? [];
       const isRejected  = reports.some((r) => r.client_rejected_at);
-      const nonRejected = reports.filter((r) => !r.client_rejected_at);
+      const nonRejected = reports.filter((r) => !r.client_rejected_at)
+        .sort((a, b) => (a.session_index ?? 0) - (b.session_index ?? 0));
       const submitted   = nonRejected.length;
       const total       = m.session_count ?? 1;
       const isIntensive = m.lecture_type === "intensive";
       const allDone     = !isRejected && (isIntensive ? submitted >= 1 : submitted >= total);
-      if (allDone && nonRejected.some((r) => !r.rating_from_client))    awaitingClientIds.add(m.id);
-      else if (allDone && nonRejected.some((r) => !r.admin_approved_at)) awaitingAdminIds.add(m.id);
+      if (!allDone) continue;
+      const lastReport  = nonRejected[nonRejected.length - 1];
+      if (!lastReport?.rating_from_client) awaitingClientIds.add(m.id);
+      else awaitingAdminIds.add(m.id);  // 마지막 회차 평가 완료 → 운영자 최종 승인 대기
     }
     return { awaitingClientIds, awaitingAdminIds };
   }, [ongoingMatches, reportsByMatch]);
@@ -401,7 +385,7 @@ export default function LeaderLecturesPage() {
               const submitted          = nonRejected.length;
               const totalSession       = m.session_count ?? 1;
               const allDone            = !isRejected && (isIntensive ? submitted >= 1 : submitted >= totalSession);
-              const awaitingClient     = allDone && nonRejected.some((r) => !r.rating_from_client);
+              const awaitingClient     = allDone && nonRejected.some((r) => !r.rating_from_client && !r.client_approved_at);
               const awaitingAdmin      = allDone && !awaitingClient && nonRejected.some((r) => !r.admin_approved_at);
               const nextSession        = submitted + 1;
 
@@ -488,24 +472,40 @@ export default function LeaderLecturesPage() {
                               const isDone    = !!report;
                               const isNext    = !isDone && i === submitted;
                               const isLocked  = !isDone && i > submitted;
+                              const clientApproved = isDone && !!(report!.client_approved_at || report!.rating_from_client);
                               return (
                                 <div key={i} className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${
-                                  isDone   ? "bg-green-50 border border-green-100" :
-                                  isNext   ? "bg-blue-50 border border-blue-100" :
-                                             "bg-gray-50 border border-gray-100"
+                                  isDone && clientApproved ? "bg-green-50 border border-green-100" :
+                                  isDone                  ? "bg-sky-50 border border-sky-100" :
+                                  isNext                  ? "bg-blue-50 border border-blue-100" :
+                                                            "bg-gray-50 border border-gray-100"
                                 }`}>
                                   <span className={`text-xs font-bold flex-shrink-0 ${
-                                    isDone ? "text-green-700" : isNext ? "text-hwaseong-blue" : "text-gray-400"
+                                    isDone && clientApproved ? "text-green-700" :
+                                    isDone                  ? "text-sky-700" :
+                                    isNext                  ? "text-hwaseong-blue" : "text-gray-400"
                                   }`}>
                                     {i + 1}회차
                                   </span>
                                   {isDone ? (
-                                    <span className="text-[10px] text-green-600 flex items-center gap-1">
-                                      ✅ 제출 완료
-                                      {report.lecture_date && (
-                                        <span className="text-gray-400">· {report.lecture_date}</span>
-                                      )}
-                                    </span>
+                                    (() => {
+                                      const clientApproved = !!(report.client_approved_at || report.rating_from_client);
+                                      return clientApproved ? (
+                                        <span className="text-[10px] text-green-600 flex items-center gap-1">
+                                          ✅ 승인됨
+                                          {report.lecture_date && (
+                                            <span className="text-gray-400">· {report.lecture_date}</span>
+                                          )}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-sky-600 flex items-center gap-1 font-semibold">
+                                          ⏳ 승인 대기중
+                                          {report.lecture_date && (
+                                            <span className="text-gray-400 font-normal">· {report.lecture_date}</span>
+                                          )}
+                                        </span>
+                                      );
+                                    })()
                                   ) : isNext ? (
                                     <button
                                       onClick={() => router.push(`/dashboard/leader/report?matchId=${m.id}&sessionIndex=${i}`)}
@@ -664,8 +664,15 @@ export default function LeaderLecturesPage() {
                   />
                   {isOpen && reports.length > 0 && (
                     <div className="mt-1 space-y-2">
-                      {reports.map((r) => (
-                        <ReportDetailPanel key={r.id} report={r} matchType={m.lecture_type} />
+                      {[...reports]
+                        .sort((a, b) => (a.session_index ?? 0) - (b.session_index ?? 0))
+                        .map((r) => (
+                        <ReportDetailPanel
+                          key={r.id}
+                          report={r}
+                          matchType={m.lecture_type}
+                          totalSessions={reports.length > 1 ? m.session_count : null}
+                        />
                       ))}
                     </div>
                   )}
@@ -935,17 +942,31 @@ function ScheduleDetailPanel({ detail }: { detail: ScheduleMatch }) {
 function ReportDetailPanel({
   report: r,
   matchType,
+  totalSessions,
 }: {
   report: Report;
   matchType: LectureType | null;
+  totalSessions?: number | null;
 }) {
   const isIntensive  = matchType === "intensive";
+  const isLongterm   = matchType === "longterm";
+  const showSession  = isLongterm && (totalSessions ?? 1) > 1;
   const dates        = isIntensive && r.lecture_dates?.length > 0 ? r.lecture_dates : [r.lecture_date];
   const fmtDate      = (d: string) =>
     new Date(d).toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
 
   return (
     <div className="bg-white border border-gray-100 rounded-2xl p-4 space-y-3 shadow-sm">
+
+      {/* 회차 레이블 (장기정기형 다회차) */}
+      {showSession && (
+        <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+          <span className="text-xs font-black text-hwaseong-blue bg-hwaseong-blue/10 px-2.5 py-1 rounded-lg">
+            {(r.session_index ?? 0) + 1}회차
+          </span>
+          <span className="text-[10px] text-gray-400">/ 총 {totalSessions}회</span>
+        </div>
+      )}
 
       {/* 헤더: 상태 + 제출일 */}
       <div className="flex items-center justify-between gap-2">

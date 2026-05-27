@@ -66,8 +66,8 @@ export default function AdminReviewPage() {
     setProcessing(req.id);
     const res = await fetch(`/api/admin/match-requests/${req.id}/approve`, { method: "PATCH" });
     if (res.ok) {
-      setRequests((prev) => prev.filter((r) => r.id !== req.id));
       setToast({ msg: `"${req.title}" 승인 완료 — 매칭센터로 이관됐습니다.`, ok: true });
+      await fetchPending();
     } else {
       const err = await res.json().catch(() => ({}));
       setToast({ msg: (err as { error?: string }).error ?? "승인 중 오류가 발생했습니다.", ok: false });
@@ -84,10 +84,10 @@ export default function AdminReviewPage() {
       body: JSON.stringify({ reason: cancelReason.trim() }),
     });
     if (res.ok) {
-      setRequests((prev) => prev.filter((r) => r.id !== cancelTarget.id));
       setToast({ msg: `"${cancelTarget.title}" 요청이 반려됐습니다.`, ok: true });
       setCancelTarget(null);
       setCancelReason("");
+      await fetchPending();
     } else {
       const err = await res.json().catch(() => ({}));
       setToast({ msg: (err as { error?: string }).error ?? "반려 처리 중 오류가 발생했습니다.", ok: false });

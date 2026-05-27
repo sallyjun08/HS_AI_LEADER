@@ -12,6 +12,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
     .from("activity_reports")
     .select(`
       id,
+      session_index,
       attendance_count,
       image_urls,
       report_text,
@@ -22,13 +23,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       lecture_dates,
       client_rejected_at,
       client_rejection_reason,
+      client_approved_at,
       rejection_history,
       admin_approved_at,
       admin_approved_by,
       admin_note,
       match:match_requests!activity_reports_match_id_fkey(
         id, title, category, address, start_date,
-        participant_count, frequency, location_type,
+        participant_count, frequency, location_type, lecture_type, session_count,
         leader:leader_profiles!match_requests_leader_id_fkey(
           id,
           profiles!leader_profiles_user_id_fkey(name, email)

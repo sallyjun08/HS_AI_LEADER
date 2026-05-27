@@ -123,19 +123,15 @@ const PENDING_REQUESTS = [
     category:         "업무 자동화",
     address:          "화성시청",
     start_date:       "2026-06-06",
-    end_date:         "2026-07-25",
+    end_date:         "2026-06-27",
     lecture_type:     "longterm",
-    session_count:    8,
+    session_count:    4,
     lecture_hours:    2,
     lecture_times:    [
       { date: "2026-06-06", day: "fri", startTime: "10:00", endTime: "12:00" },
       { date: "2026-06-13", day: "fri", startTime: "10:00", endTime: "12:00" },
       { date: "2026-06-20", day: "fri", startTime: "10:00", endTime: "12:00" },
       { date: "2026-06-27", day: "fri", startTime: "10:00", endTime: "12:00" },
-      { date: "2026-07-04", day: "fri", startTime: "10:00", endTime: "12:00" },
-      { date: "2026-07-11", day: "fri", startTime: "10:00", endTime: "12:00" },
-      { date: "2026-07-18", day: "fri", startTime: "10:00", endTime: "12:00" },
-      { date: "2026-07-25", day: "fri", startTime: "10:00", endTime: "12:00" },
     ],
     notes:            "공무원 대상 AI 업무 자동화 및 엑셀 활용 교육",
     institution_type: "공공기관",
@@ -338,14 +334,14 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
   });
   if (m2Err) return res.status(500).json({ error: `이향남 matched 요청 실패: ${m2Err.message}` });
 
-  // ── 5. 장기정기형 진행 중 — 박봉담 8회 중 3회 제출, 각기 다른 상태 ──────────
+  // ── 5. 장기정기형 진행 중 — 박봉담 4회 중 3회 제출, 각기 다른 상태 ──────────
   // 보고서 흐름 커버리지:
   //   session 0: 수요처 개별 승인 완료 (client_approved_at) → "수요처 승인" 뱃지
   //   session 1: 수요처 개별 승인 완료 (client_approved_at) → "수요처 승인" 뱃지
   //   session 2: 보고서 제출됨 → 수요처 평가 대기 ("평가 대기" 필터에 노출)
   const bondam = leaderMap.get("박봉담")!;
 
-  const longtermSessions = Array.from({ length: 8 }, (_, i) => {
+  const longtermSessions = Array.from({ length: 4 }, (_, i) => {
     const date = daysAgo(21 - i * 7);
     return { date, day: dayOfWeek(date), startTime: "10:00", endTime: "12:00" };
   });
@@ -359,9 +355,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse, _user: TokenPa
       category:         "업무 자동화",
       address:          "봉담",
       start_date:       longtermSessions[0].date,
-      end_date:         longtermSessions[7].date,
+      end_date:         longtermSessions[3].date,
       lecture_type:     "longterm",
-      session_count:    8,
+      session_count:    4,
       lecture_hours:    2,
       lecture_times:    longtermSessions,
       notes:            "중소기업 직원 대상 AI 업무 활용 8주 과정",

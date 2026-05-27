@@ -73,7 +73,7 @@ export default function AdminDashboard() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [feedLeaders, setFeedLeaders] = useState<FeedLeader[]>([]);
   const [seeding, setSeeding] = useState(false);
-  const [seedResult, setSeedResult] = useState<{ accounts?: { leaders: { name: string; email: string; password: string }[]; client: { name: string; email: string; password: string } } } | null>(null);
+  const [seedResult, setSeedResult] = useState<{ accounts?: { 강사: { 이름: string; 이메일: string; 비밀번호: string }[]; 수요처: { 이름: string; 이메일: string; 비밀번호: string } } } | null>(null);
   const [testClientBusy, setTestClientBusy] = useState(false);
   const [testClientResult, setTestClientResult] = useState<{ email: string; password: string } | null>(null);
   const [showOngoingModal, setShowOngoingModal] = useState(false);
@@ -100,11 +100,11 @@ export default function AdminDashboard() {
   async function handleSeed() {
     setSeeding(true);
     setSeedResult(null);
-    const res = await fetch("/api/admin/seed-data", { method: "POST" });
+    const res = await fetch("/api/demo/seed?key=hwaseong-demo-2026", { method: "POST" });
     const data = await res.json();
     if (res.ok) {
       setSeedResult(data);
-      setToast({ msg: "샘플 데이터 생성 완료!", ok: true });
+      setToast({ msg: "시연용 샘플 데이터 생성 완료!", ok: true });
       fetchAll();
     } else {
       setToast({ msg: data.error ?? "생성 실패", ok: false });
@@ -115,10 +115,10 @@ export default function AdminDashboard() {
   async function handleDeleteSeed() {
     setSeeding(true);
     setSeedResult(null);
-    const res = await fetch("/api/admin/seed-data", { method: "DELETE" });
+    const res = await fetch("/api/demo/seed?key=hwaseong-demo-2026", { method: "DELETE" });
     const data = await res.json();
     setToast({ msg: data.message ?? (res.ok ? "삭제 완료" : "삭제 실패"), ok: res.ok });
-    if (res.ok) fetchAll();
+    if (res.ok) { setSeedResult(null); fetchAll(); }
     setSeeding(false);
   }
 
@@ -431,7 +431,7 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="text-sm font-bold text-gray-500">개발자 도구 — 샘플 데이터</h3>
-              <p className="text-xs text-gray-400 mt-0.5">매칭 알고리즘 테스트용 강사 5명 + 수요처 1명 + 대기 요청 3건 생성</p>
+              <p className="text-xs text-gray-400 mt-0.5">시연용 강사 5명 · 수요처 1명 · 매칭 대기 3건 · 진행·완료 강의 다수 생성</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -453,17 +453,17 @@ export default function AdminDashboard() {
 
           {seedResult?.accounts && (
             <div className="mt-3 space-y-2">
-              <p className="text-xs font-bold text-gray-500 mb-1">생성된 테스트 계정 (비밀번호: Test1234!)</p>
+              <p className="text-xs font-bold text-gray-500 mb-1">생성된 시연 계정 (비밀번호: Test1234!)</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {seedResult.accounts.leaders.map((l) => (
-                  <div key={l.email} className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs">
-                    <p className="font-bold text-hwaseong-text">{l.name}</p>
-                    <p className="text-gray-400 truncate">{l.email}</p>
+                {seedResult.accounts.강사.map((l) => (
+                  <div key={l.이메일} className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs">
+                    <p className="font-bold text-hwaseong-text">{l.이름} 강사</p>
+                    <p className="text-gray-400 truncate">{l.이메일}</p>
                   </div>
                 ))}
                 <div className="bg-white border border-green-200 rounded-xl px-3 py-2 text-xs">
-                  <p className="font-bold text-green-700">{seedResult.accounts.client.name}</p>
-                  <p className="text-gray-400 truncate">{seedResult.accounts.client.email}</p>
+                  <p className="font-bold text-green-700">{seedResult.accounts.수요처.이름}</p>
+                  <p className="text-gray-400 truncate">{seedResult.accounts.수요처.이메일}</p>
                 </div>
               </div>
             </div>

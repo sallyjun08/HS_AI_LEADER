@@ -228,7 +228,7 @@ const LECTURE_TYPES: {
     name: "장기정기형",
     question: "1개월 이상 매주 정기적으로 진행되나요?",
     desc: "월 4회 이상 · 장기 커리큘럼",
-    sessionDefault: 8, sessionMin: 6, sessionMax: 99,
+    sessionDefault: 4, sessionMin: 4, sessionMax: 99,
     color: "purple", bg: "bg-purple-50", ring: "ring-purple-400", text: "text-purple-700",
   },
 ];
@@ -1563,12 +1563,12 @@ export default function ClientDashboard() {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-2">
-                        총 회차 <span className="font-normal text-gray-400">(6회 이상)</span>
+                        총 회차 <span className="font-normal text-gray-400">(4회 이상)</span>
                       </label>
                       <div className="flex items-center gap-2">
                         <button type="button"
-                          onClick={() => setForm((p) => { const next = Math.max(6, Number(p.sessionCount) - 1); return { ...p, sessionCount: String(next), sessionSlots: p.sessionSlots.slice(0, next) }; })}
-                          disabled={Number(form.sessionCount) <= 6}
+                          onClick={() => setForm((p) => { const next = Math.max(4, Number(p.sessionCount) - 1); return { ...p, sessionCount: String(next), sessionSlots: p.sessionSlots.slice(0, next) }; })}
+                          disabled={Number(form.sessionCount) <= 4}
                           className="w-9 h-9 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 text-lg font-bold hover:bg-gray-100 disabled:opacity-40">−</button>
                         <span className="text-sm font-bold text-hwaseong-text w-10 text-center">{form.sessionCount}회</span>
                         <button type="button"

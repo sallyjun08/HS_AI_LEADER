@@ -145,7 +145,7 @@ function formatHours(h: number): string {
   return `${w}시간 ${mins}분`;
 }
 function formatHoursCompact(h: number): string {
-  return Number.isInteger(h) ? `${h}시간` : `${h}시간`;
+  return formatHours(h);
 }
 
 function formatSlots(slots: AvailableSlots | null): string {
@@ -552,7 +552,11 @@ export default function ClientDashboard() {
     return <div className="min-h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-hwaseong-blue border-t-transparent rounded-full animate-spin" /></div>;
   }
 
-  const reportByMatchId = Object.fromEntries(reports.map((r) => [r.match_id, r]));
+  const reportByMatchId = reports.reduce<Record<string, ClientReport>>((acc, r) => {
+    const existing = acc[r.match_id];
+    if (!existing || (r.session_index ?? 0) >= (existing.session_index ?? 0)) acc[r.match_id] = r;
+    return acc;
+  }, {});
   // 매칭별 전체 보고서 목록 (장기정기형 회차 진행 현황용)
   const reportsByMatchId = reports.reduce<Record<string, ClientReport[]>>((acc, r) => {
     (acc[r.match_id] ??= []).push(r);
@@ -574,7 +578,7 @@ export default function ClientDashboard() {
     pending:  requests.filter((r) => r.status === "pending").length,
     matched:  requests.filter((r) => r.status === "matched").length,
     ongoing:  requests.filter((r) => r.status === "ongoing").length,
-    awaiting: activeRequests.filter((r) => r.status === "completed").length,
+    awaiting: activeRequests.filter((r) => r.status === "ongoing" && (reportsByMatchId[r.id] ?? []).some((rpt) => !rpt.client_approved_at && !rpt.client_rejected_at && rpt.rating_from_client === null)).length,
     done:     completedRequests.length,
   };
 
@@ -583,7 +587,7 @@ export default function ClientDashboard() {
     if (clientFilter === "pending")  return activeRequests.filter((r) => r.status === "pending");
     if (clientFilter === "matched")  return activeRequests.filter((r) => r.status === "matched");
     if (clientFilter === "ongoing")  return activeRequests.filter((r) => r.status === "ongoing");
-    if (clientFilter === "awaiting") return activeRequests.filter((r) => r.status === "completed");
+    if (clientFilter === "awaiting") return activeRequests.filter((r) => r.status === "ongoing" && (reportsByMatchId[r.id] ?? []).some((rpt) => !rpt.client_approved_at && !rpt.client_rejected_at && rpt.rating_from_client === null));
     return [];
   })();
 
@@ -1037,35 +1041,6 @@ export default function ClientDashboard() {
                         </div>
                       )}
 
-                      {/* 활동 보고서 + 반려/평가 (완료 후) */}
-                      {req.status === "completed" && (() => {
-                        const report = reportByMatchId[req.id];
-                        if (!report) {
-                          return (
-                            <p className="text-xs text-gray-400 text-center py-2">
-                              강사가 아직 활동 보고서를 제출하지 않았습니다.
-                            </p>
-                          );
-                        }
-                        return (
-                          <ReportReviewBlock
-                            report={report}
-                            reviewState={reviewState}
-                            rejectionState={rejectionState}
-                            ratingSubmitting={ratingSubmitting}
-                            rejectSubmitting={rejectSubmitting}
-                            onStartReview={() => setReviewState({ reportId: report.id, rating: 5, feedback: "" })}
-                            onStartReject={() => setRejectionState({ reportId: report.id, reason: "" })}
-                            onCancelReview={() => setReviewState(null)}
-                            onCancelReject={() => setRejectionState(null)}
-                            onChangeRating={(v) => setReviewState((p) => p ? { ...p, rating: v } : p)}
-                            onChangeFeedback={(v) => setReviewState((p) => p ? { ...p, feedback: v } : p)}
-                            onChangeReason={(v) => setRejectionState((p) => p ? { ...p, reason: v } : p)}
-                            onSubmitReview={() => submitRating(reviewState!.reportId, reviewState!.rating, reviewState!.feedback)}
-                            onSubmitReject={() => submitRejection(rejectionState!.reportId, rejectionState!.reason)}
-                          />
-                        );
-                      })()}
                     </div>
                   )}
                 </div>

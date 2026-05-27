@@ -167,7 +167,6 @@ export default function AdminDashboard() {
     if (r.match_id) acc[r.match_id] = (acc[r.match_id] ?? 0) + 1;
     return acc;
   }, {});
-  const unverifiedLeaders = feedLeaders.filter((l) => !l.isVerified);
   const todayReports = reports.filter((r) => {
     const today = new Date().toDateString();
     return new Date(r.submitted_at).toDateString() === today;
@@ -179,87 +178,42 @@ export default function AdminDashboard() {
       <DashboardLayout pageTitle="통합 관제 대시보드">
 
         {/* 알림 현황 패널 */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            {
-              count: rejectedRequests.length,
-              label: "재배정 필요",
-              sub: "강사 거절 → 즉시 재매칭",
-              href: "/admin/matching-center",
-              urgent: true,
-              activeColor: "bg-red-500",
-              activeBorder: "border-red-300",
-              activeBg: "bg-red-50",
-              activeText: "text-red-700",
-              activeSub: "text-red-400",
-              icon: "⚠️",
-            },
-            {
-              count: pendingRequests.length,
-              label: "강의 요청 대기",
-              sub: "강사 배정이 필요합니다",
-              href: "/admin/matching-center",
-              urgent: false,
-              activeColor: "bg-amber-500",
-              activeBorder: "border-amber-300",
-              activeBg: "bg-amber-50",
-              activeText: "text-amber-700",
-              activeSub: "text-amber-400",
-              icon: "📥",
-            },
-            {
-              count: unverifiedLeaders.length,
-              label: "강사 인증 대기",
-              sub: "자격증 검토 후 인증 처리",
-              href: "/admin/leaders",
-              urgent: false,
-              activeColor: "bg-hwaseong-blue",
-              activeBorder: "border-blue-300",
-              activeBg: "bg-blue-50",
-              activeText: "text-blue-700",
-              activeSub: "text-blue-400",
-              icon: "🏅",
-            },
-          ].map((item) => {
-            const hasAlert = item.count > 0;
-            return (
-              <a
-                key={item.label}
-                href={item.href}
-                className={`relative flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all hover:shadow-md ${
-                  hasAlert
-                    ? `${item.activeBg} ${item.activeBorder} shadow-sm`
-                    : "bg-white border-gray-100"
-                }`}
-              >
-                {hasAlert && item.urgent && (
-                  <span className="absolute top-2 right-2 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-                  </span>
+        {(() => {
+          const hasAlert = rejectedRequests.length > 0;
+          return (
+            <a
+              href="/admin/matching-center"
+              className={`relative flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all hover:shadow-md ${
+                hasAlert ? "bg-red-50 border-red-300 shadow-sm" : "bg-white border-gray-100"
+              }`}
+            >
+              {hasAlert && (
+                <span className="absolute top-2 right-2 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                </span>
+              )}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
+                hasAlert ? "bg-red-500" : "bg-gray-100"
+              }`}>
+                {hasAlert ? (
+                  <span className="text-white font-black text-sm">{rejectedRequests.length}</span>
+                ) : (
+                  <span>⚠️</span>
                 )}
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
-                  hasAlert ? item.activeColor : "bg-gray-100"
-                }`}>
-                  {hasAlert ? (
-                    <span className="text-white font-black text-sm">{item.count}</span>
-                  ) : (
-                    <span>{item.icon}</span>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <p className={`text-xs font-bold leading-tight ${hasAlert ? item.activeText : "text-gray-400"}`}>
-                    {item.label}
-                  </p>
-                  <p className={`text-[10px] mt-0.5 ${hasAlert ? item.activeSub : "text-gray-300"}`}>
-                    {hasAlert ? item.sub : "처리할 항목 없음"}
-                  </p>
-                </div>
-                {hasAlert && <span className={`ml-auto text-xs flex-shrink-0 ${item.activeText}`}>→</span>}
-              </a>
-            );
-          })}
-        </div>
+              </div>
+              <div className="min-w-0">
+                <p className={`text-xs font-bold leading-tight ${hasAlert ? "text-red-700" : "text-gray-400"}`}>
+                  재배정 필요
+                </p>
+                <p className={`text-[10px] mt-0.5 ${hasAlert ? "text-red-400" : "text-gray-300"}`}>
+                  {hasAlert ? "강사 거절 → 즉시 재매칭" : "처리할 항목 없음"}
+                </p>
+              </div>
+              {hasAlert && <span className="ml-auto text-xs flex-shrink-0 text-red-700">→</span>}
+            </a>
+          );
+        })()}
 
         {/* 관리자 헤더 */}
         <div className="bg-gradient-to-br from-gray-800 to-gray-900 rounded-3xl p-6 flex items-center gap-5">

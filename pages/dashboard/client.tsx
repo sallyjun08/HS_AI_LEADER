@@ -130,6 +130,9 @@ function formatHours(h: number): string {
   if (w === 0) return `${mins}분`;
   return `${w}시간 ${mins}분`;
 }
+function formatHoursCompact(h: number): string {
+  return Number.isInteger(h) ? `${h}시간` : `${h}시간`;
+}
 
 function formatSlots(slots: AvailableSlots | null): string {
   if (!slots || slots.days.length === 0) return "운영 시간 미정";
@@ -1330,7 +1333,7 @@ export default function ClientDashboard() {
                             onClick={() => setForm((p) => ({ ...p, lectureHours: String(Math.round((Math.max(0.5, Number(p.lectureHours) - 0.5)) * 10) / 10) }))}
                             disabled={Number(form.lectureHours) <= 0.5}
                             className="w-9 h-9 flex items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 text-lg font-bold hover:bg-gray-100 disabled:opacity-40">−</button>
-                          <span className="text-sm font-bold text-hwaseong-text w-16 text-center">{formatHours(Number(form.lectureHours))}</span>
+                          <span className="text-sm font-bold text-hwaseong-text w-20 text-center whitespace-nowrap">{formatHoursCompact(Number(form.lectureHours))}</span>
                           <button type="button"
                             onClick={() => setForm((p) => ({ ...p, lectureHours: String(Math.round((Math.min(12, Number(p.lectureHours) + 0.5)) * 10) / 10) }))}
                             disabled={Number(form.lectureHours) >= 12}

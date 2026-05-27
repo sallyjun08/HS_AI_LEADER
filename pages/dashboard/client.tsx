@@ -169,7 +169,7 @@ type Leader = {
   profiles: { name: string; email: string | null } | null;
 };
 
-const FEE_PER_SESSION = 30_000;
+const FEE_PER_HOUR = 30_000;
 
 type LectureType = "oneday" | "intensive" | "longterm";
 
@@ -538,7 +538,7 @@ export default function ClientDashboard() {
     ? selectedVenue.fee_per_use * formLectureHours * formSessionCount : 0;
   const equipmentFee = form.rentalEnabled
     ? (Number(form.rentalEquipmentCount) || 0) * (laptopSetting?.fee_per_use ?? 0) * formLectureHours * formSessionCount : 0;
-  const instructorFee = formSessionCount * FEE_PER_SESSION;
+  const instructorFee = formSessionCount * formLectureHours * FEE_PER_HOUR;
   const grandTotal = instructorFee + venueFee + equipmentFee;
 
   // 장기형 + 장소 대여: 반복 요일·시간으로 전 회차 날짜 자동 생성
@@ -730,7 +730,7 @@ export default function ClientDashboard() {
                     {req.session_count && req.session_count > 0 && (() => {
                       const sessions = req.session_count;
                       const hours   = req.lecture_hours ?? 2;
-                      const instrFee = sessions * FEE_PER_SESSION;
+                      const instrFee = sessions * hours * FEE_PER_HOUR;
                       const venue    = req.needs_venue && req.rental_venue_id
                         ? rentalSettings.find((s) => s.type === "venue" && s.id === req.rental_venue_id)
                         : null;
@@ -747,7 +747,7 @@ export default function ClientDashboard() {
                             <span className="text-emerald-600">강사비</span>
                             <span className="font-semibold text-emerald-700">
                               {formatKRW(instrFee)}
-                              <span className="font-normal text-emerald-400 ml-1">{sessions}회 × 30,000원</span>
+                              <span className="font-normal text-emerald-400 ml-1">{sessions}회 × {formatHours(hours)} × 30,000원/시간</span>
                             </span>
                           </div>
                           {rentalFee > 0 && (
@@ -1906,7 +1906,7 @@ export default function ClientDashboard() {
                   <p className="text-xs text-emerald-600 font-semibold">강사비</p>
                   <div className="text-right">
                     <p className="text-lg font-black text-emerald-800 leading-none">{formatKRW(instructorFee)}</p>
-                    <p className="text-[11px] text-emerald-500 mt-0.5">{form.sessionCount}회 × 30,000원/회</p>
+                    <p className="text-[11px] text-emerald-500 mt-0.5">{form.sessionCount}회 × {formatHours(formLectureHours)} × 30,000원/시간</p>
                   </div>
                 </div>
                 {form.rentalEnabled && selectedVenue && (

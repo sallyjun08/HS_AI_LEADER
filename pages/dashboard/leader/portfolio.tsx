@@ -76,120 +76,6 @@ function Stars({ value, size = "sm" }: { value: number | null; size?: "sm" | "md
   );
 }
 
-// ─── 강의 이력 히트맵 ──────────────────────────────────────────────────────────
-
-function ActivityHeatmap({ reports }: { reports: Report[] }) {
-  const WEEKS = 52;
-
-  const activityMap = useMemo(() => {
-    const m: Record<string, number> = {};
-    reports.forEach((r) => {
-      const d = r.lecture_date?.slice(0, 10);
-      if (d) m[d] = (m[d] ?? 0) + 1;
-    });
-    return m;
-  }, [reports]);
-
-  const { grid, monthLabels } = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startDate = new Date(today);
-    startDate.setDate(startDate.getDate() - (WEEKS * 7 - 1));
-
-    const cells: { date: string; count: number }[][] = Array.from({ length: WEEKS }, () => []);
-    const labels: (string | null)[] = Array(WEEKS).fill(null);
-    let prevMonth = -1;
-
-    for (let i = 0; i < WEEKS * 7; i++) {
-      const d = new Date(startDate);
-      d.setDate(d.getDate() + i);
-      const dateStr = d.toISOString().slice(0, 10);
-      const wi = Math.floor(i / 7);
-      cells[wi].push({ date: dateStr, count: activityMap[dateStr] ?? 0 });
-
-      if (i % 7 === 0) {
-        const mon = d.getMonth();
-        if (mon !== prevMonth) {
-          labels[wi] = `${mon + 1}월`;
-          prevMonth = mon;
-        }
-      }
-    }
-    return { grid: cells, monthLabels: labels };
-  }, [activityMap]);
-
-  function cellColor(count: number) {
-    if (count === 0) return "#eeeeee";
-    if (count === 1) return "#93c5fd";
-    if (count === 2) return "#3b82f6";
-    return "#003087";
-  }
-
-  const DAY_LABELS = ["월", "", "수", "", "금", "", "일"];
-
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-bold text-hwaseong-text text-sm">강의 이력 히트맵</h3>
-        <span className="text-xs text-gray-400">최근 1년 · {reports.length}회 강의</span>
-      </div>
-      <div className="overflow-x-auto pb-1">
-        <div style={{ minWidth: WEEKS * 14 + 24 }}>
-          {/* 월 레이블 */}
-          <div className="flex mb-1" style={{ paddingLeft: 22 }}>
-            {monthLabels.map((label, wi) => (
-              <div key={wi} style={{ width: 14, flexShrink: 0 }} className="text-[9px] text-gray-400">
-                {label}
-              </div>
-            ))}
-          </div>
-          {/* 그리드 */}
-          <div className="flex" style={{ gap: 0 }}>
-            {/* 요일 레이블 */}
-            <div className="flex flex-col mr-1.5" style={{ gap: 2 }}>
-              {DAY_LABELS.map((l, i) => (
-                <div
-                  key={i}
-                  className="text-[9px] text-gray-400 flex items-center"
-                  style={{ height: 12, width: 18, justifyContent: "flex-end", paddingRight: 2 }}
-                >
-                  {l}
-                </div>
-              ))}
-            </div>
-            {/* 주 열 */}
-            {grid.map((week, wi) => (
-              <div key={wi} className="flex flex-col" style={{ gap: 2, marginRight: 2 }}>
-                {week.map((cell, di) => (
-                  <div
-                    key={di}
-                    title={`${cell.date}: ${cell.count > 0 ? `${cell.count}회 강의` : "강의 없음"}`}
-                    style={{
-                      width: 12, height: 12,
-                      borderRadius: 2,
-                      backgroundColor: cellColor(cell.count),
-                      flexShrink: 0,
-                      cursor: cell.count > 0 ? "pointer" : "default",
-                    }}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      {/* 범례 */}
-      <div className="flex items-center gap-1.5 mt-2 justify-end">
-        <span className="text-[10px] text-gray-400">적음</span>
-        {["#eeeeee", "#93c5fd", "#3b82f6", "#003087"].map((c) => (
-          <div key={c} style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: c }} />
-        ))}
-        <span className="text-[10px] text-gray-400">많음</span>
-      </div>
-    </div>
-  );
-}
-
 // ─── 전문 분야 레이더 차트 ─────────────────────────────────────────────────────
 
 function SpecialtyRadar({ matches }: { matches: MatchRequest[] }) {
@@ -604,11 +490,6 @@ export default function PortfolioPage() {
 
         {/* ── 시각화 ── */}
         <div className="space-y-4">
-          {/* 히트맵 */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <ActivityHeatmap reports={reports} />
-          </div>
-
           {/* 레이더 차트 */}
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-1">

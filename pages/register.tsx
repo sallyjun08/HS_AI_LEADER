@@ -161,6 +161,8 @@ export default function RegisterPage() {
           setCertUploadStatus("done");
           resolve(url);
         } else {
+          const body = await res.json().catch(() => ({}));
+          console.error("[upload-cert]", res.status, body?.error);
           setCertUploadStatus("error");
           resolve(null);
         }

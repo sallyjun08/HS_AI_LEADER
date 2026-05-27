@@ -24,7 +24,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (buffer.byteLength > MAX_BYTES)
     return res.status(400).json({ error: "파일 크기는 8MB 이하여야 합니다." });
 
-  await supabaseAdmin.storage.createBucket(BUCKET, { public: true }).catch(() => {});
+  const { error: bucketError } = await supabaseAdmin.storage.createBucket(BUCKET, { public: true });
+  if (bucketError && !bucketError.message.includes("already exists")) {
+    console.error("[upload-cert] createBucket error:", bucketError.message);
+    return res.status(500).json({ error: `스토리지 버킷 초기화 실패: ${bucketError.message}` });
+  }
 
   const ext = filename.split(".").pop()?.toLowerCase() ?? "jpg";
   const path = `pending/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
@@ -33,7 +37,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .from(BUCKET)
     .upload(path, buffer, { contentType: mimeType, upsert: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    console.error("[upload-cert] upload error:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
 
   const { data: urlData } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path);
   return res.status(200).json({ url: urlData.publicUrl });

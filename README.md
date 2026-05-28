@@ -74,19 +74,6 @@
 
 ---
 
-## 자동 거절 크론 (`/api/cron/auto-reject`)
-
-`matched` 상태로 **24시간** 경과한 매칭 요청을 자동 거절 처리합니다.  
-Vercel 배포 시 `vercel.json`에 크론 설정이 필요합니다.
-
-```json
-{
-  "crons": [{ "path": "/api/cron/auto-reject", "schedule": "0 * * * *" }]
-}
-```
-
----
-
 ## 프로젝트 구조
 
 ```

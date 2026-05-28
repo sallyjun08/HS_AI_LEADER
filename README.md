@@ -228,12 +228,12 @@ npm run dev
 
 ## 테스트 계정
 
-| 역할 | 이메일 | 비밀번호 |
-|------|--------|----------|
-| 운영자 | admin@aitda.kr | admin1234 |
-| 강사 (인증 완료) | leader1@aitda.kr | lead1234 |
-| 강사 (인증 대기) | leader2@aitda.kr | lead1234 |
-| 수요처 | client@aitda.kr | client1234 |
+| 역할 | 이메일 |
+|------|--------|
+| 운영자 | admin@aitda.kr |
+| 강사 (인증 완료) | leader1@aitda.kr |
+| 강사 (인증 대기) | leader2@aitda.kr |
+| 수요처 | client@aitda.kr |
 
 ---
 

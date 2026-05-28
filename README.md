@@ -242,7 +242,7 @@ npm run dev
 개발자 콘솔에서 아래 명령으로 샘플 데이터를 생성하거나 삭제할 수 있습니다:
 
 ```js
-const K = 'hwaseong-demo-2026';
+const K = 'YOUR_DEMO_KEY';
 // 생성
 fetch(`/api/demo/seed?key=${K}`, { method: 'POST' }).then(r => r.json()).then(console.log);
 // 삭제

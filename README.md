@@ -28,14 +28,21 @@
 
 ## 주요 기능
 
+### 메인페이지 (`/`)
+- 히어로 슬라이드 — 배경 그라데이션 + 활동 현황 뱃지 자동 전환
+- 뉴스 보드 — 공지사항·교육소식·보도자료·채용공고 탭 필터
+- 활동 현황 섹션 (`ActivityStats`) — 실시간 시민리더 수·누적 강의·평균 평점
+- 티커 — 주요 공지 자동 스크롤
+
 ### 시민리더 대시보드 (`/dashboard/leader`)
 - 프로필 히어로 — 인증 배지, 전문 분야 태그
 - 요약 통계 — 이번 달 남은 강의(프로그레스바), 누적 강의 수, 평균 평점
-- 처리 필요 항목 — 수락 대기 매칭 / 미제출 보고서 / 관리자 승인 대기 알림
 - 매칭 수락·거절 (거절 사유 입력 모달)
 - 활동 보고서 제출 (`/dashboard/leader/report`) — 현장 사진 3장, Supabase Storage 업로드
+- 보고서 재제출 기능 — 반려 사유 확인 후 수정 제출
+- 내 강의 (`/dashboard/leader/lectures`) — **진행중 / 완료** 탭 분리, 완료 강의에 정산 여부 표시
 - 내 일정 관리 — 지도 바로가기, 수요처 연락처, 강의 자료실
-- 포트폴리오 (`/dashboard/leader/portfolio`) — 히트맵, 레이더 차트, 활동 이력
+- 포트폴리오 (`/dashboard/leader/portfolio`) — 레이더 차트, 활동 이력
 
 ### 수요처 대시보드 (`/dashboard/client`)
 - 강의 신청 폼 — 강의 유형(원데이형·집중코스형·장기정기형), 대상 선택, 세션 수, 일정
@@ -44,7 +51,7 @@
 - 강사 안심매칭 (이름 마스킹) 및 완료 후 평점 작성
 
 ### 운영자 대시보드 (`/dashboard/admin`)
-- 통합 관제 — 알림 패널(재배정 필요·강의 요청 대기·강사 인증 대기), 월별 차트, 요청 파이프라인
+- 통합 관제 — 알림 패널(재배정 필요), 월별 차트, 요청 파이프라인
 - 강의 검토 (`/admin/review`) — 승인·반려, 화성시 권역 필터, 통합 검색
 - 매칭 센터 (`/admin/matching-center`) — 강사 배정 모달(검색·단일 선택), 거절 요청 재배정
 - 강사 관리 (`/admin/leaders`) — 인증 승인/취소, 자격 등급(Lv.1~3), is_active 토글
@@ -53,16 +60,43 @@
 
 ---
 
+## 매칭 알고리즘 v4.0
+
+`lib/matching-algorithm.ts` — 캡스톤 연구 기반 가중 점수 계산
+
+| 항목 | 가중치 |
+|------|--------|
+| 지역 일치 | 40 |
+| 전문 분야 일치 | 40 |
+| 시간 가능 여부 | 20 |
+
+---
+
+## 자동 거절 크론 (`/api/cron/auto-reject`)
+
+`matched` 상태로 **24시간** 경과한 매칭 요청을 자동 거절 처리합니다.  
+Vercel 배포 시 `vercel.json`에 크론 설정이 필요합니다.
+
+```json
+{
+  "crons": [{ "path": "/api/cron/auto-reject", "schedule": "0 * * * *" }]
+}
+```
+
+---
+
 ## 프로젝트 구조
 
 ```
 pages/
-  index.tsx                     랜딩 페이지
+  index.tsx                     랜딩 페이지 (히어로 슬라이드 · 뉴스 보드 · ActivityStats)
   login.tsx                     로그인 (역할 선택 → 폼 2단계)
   register.tsx                  회원가입 (강사: 멀티스텝 + 수료증 업로드)
   forgot-password.tsx           비밀번호 찾기
   reset-password.tsx            비밀번호 재설정
   instructors.tsx               강사 공개 목록
+  auth/
+    callback.tsx                OAuth / 이메일 인증 콜백
   admin/
     review.tsx                  교육 요청 검토·승인
     matching-center.tsx         매칭 센터 (강사 배정)
@@ -75,6 +109,7 @@ pages/
     client.tsx                  수요처 대시보드 (신청 폼 포함)
     leader.tsx                  시민리더 대시보드
     leader/
+      lectures.tsx              내 강의 (진행중/완료 탭)
       matches.tsx               매칭 목록
       reports.tsx               보고서 목록
       report.tsx                보고서 제출
@@ -84,14 +119,19 @@ pages/
   api/
     auth/                       login, logout, me, register, check-email,
                                 forgot-password, reset-password, update-profile,
-                                upload-cert, change-password, withdraw
+                                upload-cert, cert-upload-url, change-password, withdraw
     leaders/                    index.ts, [id].ts
     match-requests/             index.ts, [id]/accept.ts, [id]/reject.ts
-    activity-reports/           index.ts, [id]/review.ts
+    activity-reports/           index.ts, [id]/approve.ts, [id]/reject.ts,
+                                [id]/review.ts, [id]/resubmit.ts
     schedule.ts                 강사 일정 (ongoing + 연락처 + 자료실)
     upload-url.ts               Supabase Storage signed URL 발급
     upload/image.ts             이미지 업로드
     public/                     leaders.ts, rental-settings.ts
+    demo/
+      seed.ts                   시연용 샘플 데이터 생성/삭제 (POST/DELETE, key 인증)
+    cron/
+      auto-reject.ts            24시간 초과 매칭 자동 거절 (Vercel Cron)
     admin/
       stats.ts
       leaders/list.ts, [id]/verify.ts, [id]/active.ts
@@ -100,7 +140,6 @@ pages/
       rental-settings/index.ts, [id].ts
       settlement/reports.ts, instructor-fees.ts, [id]/instructor-fee.ts,
                 rental-fees.ts, rental-fee/[id].ts, [id]/approve.ts
-      seed-data.ts, create-test-client.ts
 
 lib/
   auth.ts                       requireAuth 미들웨어, JWT 검증
@@ -112,27 +151,30 @@ lib/
   rental-config.ts              대여 설정 상수
 
 components/
+  ActivityStats.tsx             메인페이지 실시간 활동 현황
   DashboardLayout.tsx           사이드바 레이아웃
   GNB.tsx                       상단 내비게이션
   Footer.tsx
+  LectureCalendar.tsx           강의 일정 캘린더
   LiveCountBanner.tsx
   MatchingMap.tsx
   ZoneHeatmap.tsx
   SkillTree.tsx
 
-supabase/migrations/            001 ~ 020 순차 적용
+supabase/migrations/            001 ~ 027 순차 적용
 ```
 
 ---
 
 ## 환경 설정
 
-`.env.local` 파일을 생성하고 아래 값을 채웁니다 (`.env.local.example` 참고):
+`.env.local` 파일을 생성하고 아래 값을 채웁니다:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+CRON_SECRET=                    # Vercel Cron 인증 키 (선택, 설정 시 헤더 검증)
 ```
 
 ---
@@ -191,10 +233,29 @@ npm run dev
 | 강사 (인증 대기) | leader2@aitda.kr | lead1234 |
 | 수요처 | client@aitda.kr | client1234 |
 
-운영자 대시보드의 **개발자 도구** 패널에서 샘플 데이터(강사 5명·수요처 1명·요청 3건) 및 테스트 수요처 계정을 생성할 수 있습니다.
+---
+
+## 시연용 샘플 데이터 API
+
+개발자 콘솔에서 아래 명령으로 샘플 데이터를 생성하거나 삭제할 수 있습니다:
+
+```js
+const K = 'hwaseong-demo-2026';
+// 생성
+fetch(`/api/demo/seed?key=${K}`, { method: 'POST' }).then(r => r.json()).then(console.log);
+// 삭제
+fetch(`/api/demo/seed?key=${K}`, { method: 'DELETE' }).then(r => r.json()).then(console.log);
+```
+
+강사 5명·수요처 1명·매칭 요청 3건이 생성됩니다.
 
 ---
 
 ## Supabase Storage
 
-`activity-reports` 버킷을 Public으로 생성해야 활동 보고서 사진 업로드가 동작합니다.
+다음 버킷을 Supabase Storage에서 생성합니다:
+
+| 버킷 | 공개 여부 | 용도 |
+|------|-----------|------|
+| `activity-reports` | Public | 활동 보고서 현장 사진 |
+| `certificates` | Private | 강사 수료증 (Signed URL 업로드) |
